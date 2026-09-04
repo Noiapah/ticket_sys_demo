@@ -23,22 +23,32 @@ if ($SkipTests) { $buildArguments += '-DskipTests' }
 if ($LASTEXITCODE -ne 0) { throw 'Maven-byggingen feilet.' }
 & $maven dependency:copy-dependencies '-DincludeScope=runtime' '-DoutputDirectory=target/package-input'
 if ($LASTEXITCODE -ne 0) { throw 'Kopiering av runtime-avhengigheter feilet.' }
-Copy-Item -LiteralPath 'target/phone-support-1.0.0.jar' -Destination 'target/package-input' -Force
+$appVersion = '1.0.1'
+$appJar = "phone-support-$appVersion.jar"
+Copy-Item -LiteralPath "target/$appJar" -Destination 'target/package-input' -Force
 
 $destination = Join-Path $projectRoot 'target/jpackage'
 New-Item -ItemType Directory -Force -Path $destination | Out-Null
 $arguments = @(
   '--type', $Type,
   '--name', 'Telefonhjelp',
-  '--app-version', '1.0.0',
+  '--app-version', $appVersion,
   '--vendor', 'Telefonhjelp',
   '--description', 'Lokalt supportsystem for telefonbutikk',
   '--input', (Join-Path $projectRoot 'target/package-input'),
-  '--main-jar', 'phone-support-1.0.0.jar',
+  '--main-jar', $appJar,
   '--main-class', 'no.telefonhjelp.DesktopLauncher',
   '--java-options', '--enable-native-access=ALL-UNNAMED',
   '--dest', $destination
 )
-if ($Type -eq 'exe') { $arguments += @('--win-menu', '--win-shortcut', '--win-dir-chooser', '--win-per-user-install') }
+if ($Type -eq 'exe') {
+  $arguments += @(
+    '--win-menu',
+    '--win-shortcut',
+    '--win-dir-chooser',
+    '--win-per-user-install',
+    '--win-upgrade-uuid', '6144505c-7492-47d5-b0b1-bb64b8a16cd6'
+  )
+}
 & (Join-Path $env:JAVA_HOME 'bin/jpackage.exe') @arguments
 if ($LASTEXITCODE -ne 0) { throw 'jpackage feilet. EXE-bygging krever WiX Toolset på PATH.' }

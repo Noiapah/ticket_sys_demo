@@ -4,5 +4,6 @@ interface Window {
   desktop?: {
     chooseBackupPath(): string
     chooseRestorePath(): string
+    exitApplication(): void
   }
 }

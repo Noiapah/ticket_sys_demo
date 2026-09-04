@@ -5,6 +5,7 @@ import javafx.application.Platform;
 import javafx.scene.Scene;
 import javafx.scene.image.Image;
 import javafx.scene.web.WebView;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.FileChooser;
 import javafx.concurrent.Worker;
@@ -74,15 +75,27 @@ public class PhoneSupportApplication extends Application {
             if (state == Worker.State.SUCCEEDED) {
                 var window = (JSObject) webView.getEngine().executeScript("window");
                 window.setMember("desktop", desktopBridge);
+                webView.getEngine().executeScript("window.dispatchEvent(new Event('desktop-ready'))");
             }
         });
         webView.getEngine().load("http://127.0.0.1:" + port + "/");
         stage.setTitle("Telefonhjelp");
-        stage.setMinWidth(1024);
-        stage.setMinHeight(720);
-        stage.setScene(new Scene(webView, 1360, 840));
+        stage.setMinWidth(800);
+        stage.setMinHeight(560);
+        var bounds = Screen.getPrimary().getVisualBounds();
+        var scene = new Scene(webView, Math.min(1360, bounds.getWidth()), Math.min(840, bounds.getHeight()));
+        stage.setScene(scene);
+        Runnable fitContent = () -> {
+            var widthScale = Math.max(0.72, scene.getWidth() / 1280.0);
+            var heightScale = Math.max(0.72, scene.getHeight() / 720.0);
+            webView.setZoom(Math.min(1.0, Math.min(widthScale, heightScale)));
+        };
+        scene.widthProperty().addListener((observable, oldValue, newValue) -> fitContent.run());
+        scene.heightProperty().addListener((observable, oldValue, newValue) -> fitContent.run());
         stage.setOnCloseRequest(event -> Platform.exit());
         stage.show();
+        stage.setMaximized(true);
+        fitContent.run();
     }
 
     @Override
@@ -121,6 +134,8 @@ public class PhoneSupportApplication extends Application {
             var selected = databaseChooser("Velg sikkerhetskopi").showOpenDialog(owner);
             return selected == null ? "" : selected.getAbsolutePath();
         }
+
+        public void exitApplication() { Platform.runLater(Platform::exit); }
 
         private FileChooser databaseChooser(String title) {
             var chooser = new FileChooser();

@@ -17,6 +17,12 @@ async function createFirstEmployee() {
     await app.selectEmployee(employee.id)
   } catch (cause) { firstRunError.value = cause instanceof Error ? cause.message : 'Kunne ikke opprette den ansatte.' }
 }
+
+function exitApplication() {
+  if (!window.confirm('Vil du avslutte Telefonhjelp?')) return
+  if (window.desktop) window.desktop.exitApplication()
+  else window.close()
+}
 </script>
 
 <template>
@@ -37,6 +43,7 @@ async function createFirstEmployee() {
         </select>
         <RouterLink class="settings-link" to="/ansatte">⚙ Ansattinnstillinger</RouterLink>
       </div>
+      <button class="exit-button" type="button" title="Avslutt Telefonhjelp" @click="exitApplication"><span aria-hidden="true">⏻</span> Avslutt</button>
     </header>
 
     <main :class="['page', { 'page--wide': route.path === '/' }]">
