@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.gradle/
+build/
+target/
+.tools/
+.idea/
+*.iml
+*.log
+*.tsbuildinfo
+.env.local
+frontend/coverage/
+test-results/
+playwright-report/

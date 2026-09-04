@@ -1,0 +1,32 @@
+{
+  "name": "phone-support",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "cross-env VITE_USE_MOCK=true vite",
+    "build": "vue-tsc -b && vite build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@vueuse/core": "14.0.0",
+    "fuse.js": "7.1.0",
+    "libphonenumber-js": "1.12.15",
+    "pinia": "3.0.3",
+    "vue": "3.5.21",
+    "vue-router": "4.5.1"
+  },
+  "devDependencies": {
+    "@testing-library/vue": "8.1.0",
+    "@types/node": "24.3.0",
+    "@vitejs/plugin-vue": "6.0.1",
+    "cross-env": "10.0.0",
+    "jsdom": "26.1.0",
+    "sass": "1.92.0",
+    "typescript": "5.9.2",
+    "vite": "7.3.6",
+    "vitest": "3.2.7",
+    "vue-tsc": "3.0.6"
+  }
+}
