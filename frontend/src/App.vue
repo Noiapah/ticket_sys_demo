@@ -6,6 +6,7 @@ import { gateway } from './gateway'
 
 const app = useAppStore()
 const route = useRoute()
+const appVersion = __APP_VERSION__
 const firstEmployeeName = ref('')
 const firstRunError = ref('')
 onMounted(app.initialize)
@@ -28,10 +29,13 @@ function exitApplication() {
 <template>
   <div class="app-shell">
     <header class="topbar">
-      <RouterLink class="brand" to="/" aria-label="Gå til aktive saker">
-        <span class="brand-mark">T</span>
-        <span><strong>Telefonhjelp</strong><small>Butikkstøtte</small></span>
-      </RouterLink>
+      <div class="brand-area">
+        <span class="app-version" :title="`Versjon ${appVersion}`">v{{ appVersion }}</span>
+        <RouterLink class="brand" to="/" aria-label="Gå til aktive saker">
+          <span class="brand-mark">T</span>
+          <span><strong>Telefonhjelp</strong><small>Butikkstøtte</small></span>
+        </RouterLink>
+      </div>
       <nav aria-label="Hovedmeny">
         <RouterLink to="/">Saker</RouterLink>
         <RouterLink to="/rapporter">Rapporter</RouterLink>

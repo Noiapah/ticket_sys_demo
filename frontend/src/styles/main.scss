@@ -21,6 +21,8 @@ h2 { margin-bottom: 1rem; font-size: 1.15rem; }
 small { color: $muted; }
 
 .topbar { position: sticky; z-index: 100; top: 0; height: 76px; display: flex; align-items: center; gap: 38px; padding: 0 34px; background: #17251d; color: #fff; box-shadow: 0 3px 18px rgba(21, 37, 29, .14); }
+.brand-area { display: flex; align-items: center; gap: 10px; }
+.app-version { padding: 4px 6px; border: 1px solid #56675c; border-radius: 6px; color: #b8c6bd; font-size: .68rem; font-weight: 750; letter-spacing: .03em; white-space: nowrap; }
 .brand { display: flex; align-items: center; gap: 11px; min-width: 205px; text-decoration: none; }
 .brand-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: #e8d88a; color: #263329; font-family: Georgia, serif; font-size: 24px; font-weight: 800; }
 .brand strong, .brand small { display: block; }
