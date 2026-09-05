@@ -1,12 +1,12 @@
-import { seedEmployees } from '../data/employees'
-import { seedTickets } from '../data/tickets'
+import { seedEmployees } from './employees'
+import { seedTickets } from './tickets'
 import { TRANSFER_CATEGORY } from '../data/categories'
 import { normalizePhone, normalizeText } from '../domain/format'
-import { statusLabels, type Employee, type HistoryEvent, type ReportFilter, type ReportSummary, type TemporaryCredential, type Ticket, type TicketDraft, type TicketPatch, type TicketStatus } from '../domain/types'
-import type { TicketGateway, TicketQuery } from './TicketGateway'
+import { statusLabels, type HistoryEvent, type ReportFilter, type ReportSummary, type TemporaryCredential, type Ticket, type TicketDraft, type TicketPatch } from '../domain/types'
+import type { TicketGateway, TicketQuery } from '../gateway/TicketGateway'
 
-let employees = structuredClone(seedEmployees)
-let tickets = structuredClone(seedTickets)
+const employees = structuredClone(seedEmployees)
+const tickets = structuredClone(seedTickets)
 let currentEmployeeId = 1
 let nextTicketId = Math.max(...tickets.map(ticket => ticket.id)) + 1
 let nextEventId = 100
@@ -43,7 +43,7 @@ function filtered(query: TicketQuery = {}) {
   })
 }
 
-export const mockGateway: TicketGateway = {
+export const gateway: TicketGateway = {
   async bootstrap() { return { employees: copy(employees), currentEmployeeId } },
   async setCurrentEmployee(id) { currentEmployeeId = id },
   async matchCustomer(phone) { const normalized = normalizePhone(phone).normalized; const matches = tickets.filter(item => item.customerPhoneNormalized === normalized); return matches.length ? { id: matches[0].id, name: matches[0].customerName, phoneNormalized: normalized, previousTickets: matches.length } : null },

@@ -6,4 +6,3 @@ export const seedEmployees: Employee[] = [
   { id: 3, name: 'Markus', active: true },
   { id: 4, name: 'Sofie', active: true }
 ]
-

@@ -4,33 +4,79 @@ Et lokalt, norskspråklig supportsystem for en telefonbutikk. Programmet er bygg
 
 ## Utvikling
 
-Forutsetninger: Node.js 24 LTS og JDK 25. JavaFX og øvrige biblioteker hentes av Maven. Produksjonsinstallasjonen inkluderer Java og krever ingen utviklingsverktøy eller nettforbindelse.
+Forutsetninger: Node.js 24 og JDK 25 på `PATH`, med `JAVA_HOME` satt til JDK-mappen. Maven Wrapper henter Maven; en separat Maven-installasjon er ikke nødvendig. Produksjonsinstallasjonen inkluderer Java og krever ingen utviklingsverktøy eller nettforbindelse.
 
 ```powershell
-npm install
+npm ci
 npm run dev
 ```
 
-`npm run dev` bruker minnedata. For hele programmet:
+Kommandoene kjøres fra prosjektroten. `npm run dev` bruker Vites `mock`-modus med minnedata. Produksjonsbygg bruker HTTP-gatewayen og inkluderer ikke mock-filer. For hele programmet:
 
 ```powershell
-npm run build
 $env:JAVA_HOME = 'C:\sti\til\jdk-25'
-.\mvnw.cmd javafx:run
+.\mvnw.cmd compile javafx:run
 ```
 
-Data lagres under `%LOCALAPPDATA%\PhoneSupport`. Vanlige sikkerhetskopier inneholder aldri midlertidig informasjon.
+Maven bygger og kopierer Vue-grensesnittet automatisk. JavaFX og øvrige biblioteker hentes av Maven. Data lagres under `%LOCALAPPDATA%\PhoneSupport`.
+
+## Mappestruktur
+
+```text
+frontend/
+  src/
+    components/    Gjenbrukbare UI-komponenter
+    data/          Kategorier og enhetskatalog
+    domain/        Typer, hjelpefunksjoner og enhetstester
+    gateway/       Gateway-kontrakt og HTTP-implementasjon
+    mocks/         Minnedatabase og eksempeldata for utvikling
+    stores/        Pinia-tilstand
+    styles/        SCSS
+    views/         Sider
+  tsconfig.json    TypeScript-konfigurasjon
+  vite.config.ts  Vite- og Vitest-konfigurasjon
+src/
+  main/java/      JavaFX-vert, API og tjenester
+  main/resources/ Innstillinger og Flyway-migreringer
+  test/java/      Java-tester
+scripts/          Pakking og opprydding
+.mvn/             Maven Wrapper-konfigurasjon
+.tools/           Lokale utviklingsverktøy (ignorert av Git)
+target/           Genererte filer, tester og pakkestaging (ignorert)
+releases/         EXE-installere (ignorert; beholdes ved opprydding)
+```
+
+`package.json` og låsefilen ligger i roten slik at npm- og Maven-kommandoene kan kjøres fra samme sted. Frontend-konfigurasjonen ligger sammen med frontend-koden. Appversjonen for Windows-pakking leses fra `pom.xml`.
 
 ## Kontroller
 
 ```powershell
 npm test
 .\mvnw.cmd test
-npm run build
-.\mvnw.cmd package
+npm run typecheck
 ```
 
-Bygg Windows-installasjonsprogrammet med `.\scripts\package.ps1`. Det krever WiX Toolset på `PATH`; resultatet legges i `target\jpackage`. En installerbarhetsuavhengig kontroll av den medfølgende runtime-pakken kan kjøres med `.\scripts\package.ps1 -Type app-image`.
+`npm test` kjører de rene domene-testene i Node. `npm run build` lager grensesnittet i `target/frontend`; `.\mvnw.cmd package` lager også Java-appen.
+
+## Windows-pakking
+
+Bygg installasjonsprogrammet med `.\scripts\package.ps1`. Det krever WiX 3 (`candle.exe` og `light.exe`) på `PATH`; resultatet legges i `releases`. Skriptet kjører Java-testene med mindre `-SkipTests` er angitt. En appmappe med runtime kan bygges med `.\scripts\package.ps1 -Type app-image`; den legges i `target/jpackage`.
+
+På denne arbeidskopien finnes et lokalt verktøysett som kan brukes slik:
+
+```powershell
+$env:JAVA_HOME = (Resolve-Path '.tools/liberica-full/jdk-25.0.4.1').Path
+$nodeTools = (Resolve-Path '.tools/node-v24.19.0-win-x64').Path
+$wixTools = (Resolve-Path '.tools/wix314').Path
+$env:Path = "$env:JAVA_HOME\bin;$nodeTools;$wixTools;" + $env:Path
+.\scripts\package.ps1
+```
+
+`.tools` følger ikke med Git. På en ny maskin må utviklingsverktøyene installeres eller pakkes ut først.
+
+## Opprydding
+
+`.\scripts\clean.ps1 -WhatIf` viser hva som ryddes. `.\scripts\clean.ps1` fjerner `target` og eldre genererte byggfiler. Installere i `releases`, kildekode, `node_modules`, `.tools` og programdata i AppData beholdes. De genererte filene kan bygges på nytt med npm/Maven.
 
 ## Data og personvern
 

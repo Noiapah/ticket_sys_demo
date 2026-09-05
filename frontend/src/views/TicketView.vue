@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import AgeIndicator from '../components/AgeIndicator.vue'
 import DeviceAutocomplete from '../components/DeviceAutocomplete.vue'
 import { categories, TRANSFER_CATEGORY } from '../data/categories'
@@ -9,7 +9,7 @@ import { statusLabels, type OperatingSystem, type TemporaryCredential, type Tick
 import { gateway } from '../gateway'
 import { useAppStore } from '../stores/app'
 
-const route = useRoute(); const router = useRouter(); const app = useAppStore()
+const route = useRoute(); const app = useAppStore()
 const item = ref<Ticket | null>(null); const loading = ref(true); const busy = ref(false); const error = ref(''); const comment = ref(''); const editing = ref(false); const otherModel = ref(false)
 const edit = reactive({ customerName: '', customerPhone: '', deviceModel: '', newDeviceModel: '', manufacturer: '', operatingSystem: 'OTHER' as OperatingSystem, category: '', description: '' })
 const credentials = ref<TemporaryCredential[]>([])

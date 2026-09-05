@@ -1,5 +1,2 @@
-import { httpGateway } from './httpGateway'
-import { mockGateway } from './mockGateway'
-
-export const gateway = import.meta.env.VITE_USE_MOCK === 'true' ? mockGateway : httpGateway
-
+// Vite selects the implementation at build time; production never imports mock data.
+export { gateway } from '#ticket-gateway'

@@ -17,7 +17,7 @@ const params = (value: object) => {
   return result.toString()
 }
 
-export const httpGateway: TicketGateway = {
+export const gateway: TicketGateway = {
   bootstrap: () => request('/bootstrap'),
   setCurrentEmployee: employeeId => request('/settings/current-employee', { method: 'PUT', body: JSON.stringify({ employeeId }) }),
   async matchCustomer(phone) {

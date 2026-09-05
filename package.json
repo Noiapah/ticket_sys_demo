@@ -4,13 +4,13 @@
   "version": "1.0.2",
   "type": "module",
   "scripts": {
-    "dev": "cross-env VITE_USE_MOCK=true vite",
-    "build": "vue-tsc -b && vite build",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "dev": "vite --config frontend/vite.config.ts --mode mock",
+    "typecheck": "vue-tsc --noEmit -p frontend/tsconfig.json",
+    "build": "npm run typecheck && vite build --config frontend/vite.config.ts",
+    "test": "vitest run --config frontend/vite.config.ts",
+    "test:watch": "vitest --config frontend/vite.config.ts"
   },
   "dependencies": {
-    "@vueuse/core": "14.0.0",
     "fuse.js": "7.1.0",
     "libphonenumber-js": "1.12.15",
     "pinia": "3.0.3",
@@ -18,11 +18,8 @@
     "vue-router": "4.5.1"
   },
   "devDependencies": {
-    "@testing-library/vue": "8.1.0",
     "@types/node": "24.3.0",
     "@vitejs/plugin-vue": "6.0.1",
-    "cross-env": "10.0.0",
-    "jsdom": "26.1.0",
     "sass": "1.92.0",
     "typescript": "5.9.2",
     "vite": "7.3.6",

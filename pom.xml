@@ -45,10 +45,9 @@
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId><artifactId>maven-resources-plugin</artifactId><version>3.3.1</version>
-        <executions><execution><id>copy-vue</id><phase>process-resources</phase><goals><goal>copy-resources</goal></goals><configuration><outputDirectory>${project.build.outputDirectory}/static</outputDirectory><resources><resource><directory>${project.basedir}/build/frontend</directory></resource></resources></configuration></execution></executions>
+        <executions><execution><id>copy-vue</id><phase>process-resources</phase><goals><goal>copy-resources</goal></goals><configuration><outputDirectory>${project.build.outputDirectory}/static</outputDirectory><resources><resource><directory>${project.build.directory}/frontend</directory></resource></resources></configuration></execution></executions>
       </plugin>
       <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.4</version><configuration><useModulePath>false</useModulePath></configuration></plugin>
-      <plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId><version>${spring-boot.version}</version><configuration><mainClass>no.telefonhjelp.DesktopLauncher</mainClass><skip>true</skip></configuration></plugin>
       <plugin><groupId>org.openjfx</groupId><artifactId>javafx-maven-plugin</artifactId><version>0.0.8</version><configuration><mainClass>no.telefonhjelp.DesktopLauncher</mainClass></configuration></plugin>
     </plugins>
   </build>

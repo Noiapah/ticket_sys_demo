@@ -1,14 +1,15 @@
+# Dependencies and local development tools
 node_modules/
-dist/
-.gradle/
-build/
-target/
-.tools/
+/.tools/
+
+# Generated output (installers are kept separate from cleanable builds)
+/target/
+/releases/
+/build/
+*.tsbuildinfo
+*.log
+
+# Editor and local settings
 .idea/
 *.iml
-*.log
-*.tsbuildinfo
 .env.local
-frontend/coverage/
-test-results/
-playwright-report/
