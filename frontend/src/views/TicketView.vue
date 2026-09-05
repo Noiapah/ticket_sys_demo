@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AgeIndicator from '../components/AgeIndicator.vue'
 import DeviceAutocomplete from '../components/DeviceAutocomplete.vue'
-import { categories } from '../data/categories'
+import { categories, TRANSFER_CATEGORY } from '../data/categories'
 import { dateTime, formatPhone, timeOnly } from '../domain/format'
 import { statusLabels, type OperatingSystem, type TemporaryCredential, type Ticket, type TicketStatus } from '../domain/types'
 import { gateway } from '../gateway'
@@ -11,7 +11,7 @@ import { useAppStore } from '../stores/app'
 
 const route = useRoute(); const router = useRouter(); const app = useAppStore()
 const item = ref<Ticket | null>(null); const loading = ref(true); const busy = ref(false); const error = ref(''); const comment = ref(''); const editing = ref(false); const otherModel = ref(false)
-const edit = reactive({ customerName: '', customerPhone: '', deviceModel: '', manufacturer: '', operatingSystem: 'OTHER' as OperatingSystem, category: '', description: '' })
+const edit = reactive({ customerName: '', customerPhone: '', deviceModel: '', newDeviceModel: '', manufacturer: '', operatingSystem: 'OTHER' as OperatingSystem, category: '', description: '' })
 const credentials = ref<TemporaryCredential[]>([])
 const credentialForm = reactive<Record<string, string>>({ account: '', code: '', simPin: '', temporaryPassword: '' })
 const credentialExists = (key: string) => credentials.value.some(value => value.key === key)
@@ -19,7 +19,7 @@ const accountLabel = computed(() => item.value?.operatingSystem === 'IOS' ? 'App
 const codeLabel = computed(() => item.value?.operatingSystem === 'IOS' || item.value?.operatingSystem === 'ANDROID' ? 'Skjermkode' : 'Enhetskode')
 const active = computed(() => item.value?.status !== 'CLOSED')
 
-function apply(ticket: Ticket) { item.value = ticket; Object.assign(edit, { customerName: ticket.customerName, customerPhone: ticket.customerPhone, deviceModel: ticket.deviceModel, manufacturer: ticket.manufacturer, operatingSystem: ticket.operatingSystem, category: ticket.category, description: ticket.description }) }
+function apply(ticket: Ticket) { item.value = ticket; Object.assign(edit, { customerName: ticket.customerName, customerPhone: ticket.customerPhone, deviceModel: ticket.deviceModel, newDeviceModel: ticket.newDeviceModel, manufacturer: ticket.manufacturer, operatingSystem: ticket.operatingSystem, category: ticket.category, description: ticket.description }) }
 async function load() { loading.value = true; try { apply(await gateway.getTicket(Number(route.params.id))); credentials.value = await gateway.getTemporaryInfo(Number(route.params.id)); credentials.value.forEach(value => credentialForm[value.key] = value.value) } catch (cause) { error.value = message(cause) } finally { loading.value = false } }
 const message = (cause: unknown) => cause instanceof Error ? cause.message : 'Noe gikk galt.'
 async function action(operation: (ticket: Ticket) => Promise<Ticket>) { if (!item.value) return; busy.value = true; error.value = ''; try { apply(await operation(item.value)) } catch (cause) { error.value = message(cause) } finally { busy.value = false } }
@@ -47,8 +47,8 @@ onMounted(load)
       <div class="detail-main">
         <section class="card section-card">
           <div class="section-heading"><h2>Saksinformasjon</h2><button v-if="active" class="text-button" @click="editing = !editing">{{ editing ? 'Avbryt' : 'Rediger' }}</button></div>
-          <form v-if="editing" class="edit-form" @submit.prevent="saveEdit"><div class="two-columns"><label>Navn<input v-model="edit.customerName" required /></label><label>Telefon<input v-model="edit.customerPhone" required /></label></div><DeviceAutocomplete v-model="edit.deviceModel" v-model:other="otherModel" :type="item.deviceType" @select="value => Object.assign(edit, { deviceModel: value.model, manufacturer: value.manufacturer, operatingSystem: value.operatingSystem })" /><label>Kategori<select v-model="edit.category"><option v-for="category in categories" :key="category">{{ category }}</option></select></label><label>Problem<textarea v-model="edit.description" rows="3" required></textarea></label><button class="button button--primary" :disabled="busy">Lagre endringer</button></form>
-          <dl v-else class="facts"><div><dt>Kategori</dt><dd>{{ item.category }}</dd></div><div><dt>Problem</dt><dd>{{ item.description }}</dd></div><div><dt>Opprettet</dt><dd>{{ dateTime.format(new Date(item.createdAt)) }} av {{ item.createdByName }}</dd></div></dl>
+          <form v-if="editing" class="edit-form" @submit.prevent="saveEdit"><div class="two-columns"><label>Navn<input v-model="edit.customerName" required /></label><label>Telefon<input v-model="edit.customerPhone" required /></label></div><DeviceAutocomplete v-model="edit.deviceModel" v-model:other="otherModel" :type="item.deviceType" @select="value => Object.assign(edit, { deviceModel: value.model, manufacturer: value.manufacturer, operatingSystem: value.operatingSystem })" /><label>Kategori<select v-model="edit.category"><option v-for="category in categories" :key="category">{{ category }}</option></select></label><label v-if="edit.category === TRANSFER_CATEGORY">Enhetsmodell (ny enhet)<input v-model="edit.newDeviceModel" placeholder="F.eks. iPhone 16 Pro" /></label><label>Problem<textarea v-model="edit.description" rows="3" required></textarea></label><button class="button button--primary" :disabled="busy">Lagre endringer</button></form>
+          <dl v-else class="facts"><div><dt>Kategori</dt><dd>{{ item.category }}</dd></div><div v-if="item.newDeviceModel"><dt>Ny enhet</dt><dd>{{ item.newDeviceModel }}</dd></div><div><dt>Problem</dt><dd>{{ item.description }}</dd></div><div><dt>Opprettet</dt><dd>{{ dateTime.format(new Date(item.createdAt)) }} av {{ item.createdByName }}</dd></div></dl>
         </section>
         <section class="card section-card comments"><h2>Kommentarer</h2><div v-if="!item.comments.length" class="muted">Ingen kommentarer ennå.</div><article v-for="entry in item.comments" :key="entry.id"><header><strong>{{ entry.employeeName }}</strong><time>{{ dateTime.format(new Date(entry.createdAt)) }}</time></header><p>{{ entry.text }}</p></article><form v-if="active" class="comment-form" @submit.prevent="addComment"><label><span class="sr-only">Ny kommentar</span><textarea v-model="comment" rows="2" placeholder="Legg til informasjon…" required></textarea></label><button class="button button--primary" :disabled="busy || !comment.trim()">Legg til kommentar</button></form></section>
         <section class="card section-card"><h2>Historikk</h2><ol class="timeline"><li v-for="event in [...item.history].reverse()" :key="event.id"><time>{{ timeOnly.format(new Date(event.createdAt)) }}</time><span></span><div><strong>{{ event.summary }}</strong><small>{{ event.actorName }} · {{ dateTime.format(new Date(event.createdAt)) }}</small></div></li></ol></section>

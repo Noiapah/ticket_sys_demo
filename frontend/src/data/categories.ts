@@ -1,5 +1,7 @@
+export const TRANSFER_CATEGORY = 'Dataoverføring / sikkerhetskopi / oppsett'
+
 export const categories = [
-  'Dataoverføring / sikkerhetskopi / oppsett',
+  TRANSFER_CATEGORY,
   'Nettverk / tilkobling',
   'Konto / brukernavn / passord',
   'E-post',
@@ -8,4 +10,3 @@ export const categories = [
   'Systemproblemer',
   'Annet'
 ] as const
-

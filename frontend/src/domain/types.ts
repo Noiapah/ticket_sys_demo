@@ -50,6 +50,7 @@ export interface Ticket {
   deviceType: DeviceType
   manufacturer: string
   deviceModel: string
+  newDeviceModel: string
   operatingSystem: OperatingSystem
   category: string
   description: string
@@ -72,6 +73,7 @@ export interface TicketDraft {
   deviceType: DeviceType
   manufacturer: string
   deviceModel: string
+  newDeviceModel: string
   operatingSystem: OperatingSystem
   category: string
   description: string

@@ -1,5 +1,6 @@
 import { seedEmployees } from '../data/employees'
 import { seedTickets } from '../data/tickets'
+import { TRANSFER_CATEGORY } from '../data/categories'
 import { normalizePhone, normalizeText } from '../domain/format'
 import { statusLabels, type Employee, type HistoryEvent, type ReportFilter, type ReportSummary, type TemporaryCredential, type Ticket, type TicketDraft, type TicketPatch, type TicketStatus } from '../domain/types'
 import type { TicketGateway, TicketQuery } from './TicketGateway'
@@ -37,7 +38,7 @@ function filtered(query: TicketQuery = {}) {
     if (query.employeeId && item.assignedToId !== query.employeeId) return false
     if (query.category && item.category !== query.category) return false
     if (!needle) return true
-    const haystack = normalizeText([item.id, item.customerName, item.customerPhone, item.customerPhoneNormalized, item.deviceModel, item.description].join(' '))
+    const haystack = normalizeText([item.id, item.customerName, item.customerPhone, item.customerPhoneNormalized, item.deviceModel, item.newDeviceModel, item.description].join(' '))
     return needle.split(' ').every(token => haystack.includes(token))
   })
 }
@@ -52,7 +53,7 @@ export const mockGateway: TicketGateway = {
     const actor = employee(actorId)
     const phone = normalizePhone(draft.customerPhone)
     const now = new Date().toISOString()
-    const item: Ticket = { ...draft, id: nextTicketId++, version: 0, customerPhoneNormalized: phone.normalized, createdById: actor.id, createdByName: actor.name, assignedToId: actor.id, assignedToName: actor.name, status: 'IN_PROGRESS', urgent: false, createdAt: now, updatedAt: now, comments: [], history: [] }
+    const item: Ticket = { ...draft, newDeviceModel: draft.category === TRANSFER_CATEGORY ? draft.newDeviceModel.trim() : '', id: nextTicketId++, version: 0, customerPhoneNormalized: phone.normalized, createdById: actor.id, createdByName: actor.name, assignedToId: actor.id, assignedToName: actor.name, status: 'IN_PROGRESS', urgent: false, createdAt: now, updatedAt: now, comments: [], history: [] }
     tickets.push(item)
     history(item, actorId, 'CREATED', 'Saken ble opprettet')
     history(item, actorId, 'STATUS', 'Status satt til Pågår')
@@ -60,13 +61,14 @@ export const mockGateway: TicketGateway = {
   },
   async updateTicket(id: number, patch: TicketPatch, actorId: number) {
     const item = ticket(id); ensureWritable(item, patch.version)
-    const labels: Array<[keyof TicketDraft, string]> = [['customerName', 'Kundenavn'], ['customerPhone', 'Telefonnummer'], ['deviceModel', 'Enhet'], ['category', 'Kategori'], ['description', 'Problem']]
+    const labels: Array<[keyof TicketDraft, string]> = [['customerName', 'Kundenavn'], ['customerPhone', 'Telefonnummer'], ['deviceModel', 'Enhet'], ['newDeviceModel', 'Ny enhet'], ['category', 'Kategori'], ['description', 'Problem']]
     for (const [key, label] of labels) {
       if (patch[key] !== undefined && patch[key] !== item[key]) {
         const old = String(item[key]); (item as unknown as Record<string, unknown>)[key] = patch[key]
         history(item, actorId, 'EDITED', `${label} endret: ${old} → ${patch[key]}`)
       }
     }
+    if (item.category !== TRANSFER_CATEGORY) item.newDeviceModel = ''
     if (patch.customerPhone) item.customerPhoneNormalized = normalizePhone(patch.customerPhone).normalized
     return copy(item)
   },

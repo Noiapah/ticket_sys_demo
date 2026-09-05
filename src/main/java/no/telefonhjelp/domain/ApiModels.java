@@ -16,16 +16,16 @@ public final class ApiModels {
     public record HistoryEvent(long id, long actorEmployeeId, String actorName, String eventType, String summary, Instant createdAt) {}
     public record Ticket(
             long id, long version, String customerName, String customerPhone, String customerPhoneNormalized,
-            DeviceType deviceType, String manufacturer, String deviceModel, OperatingSystem operatingSystem,
+            DeviceType deviceType, String manufacturer, String deviceModel, String newDeviceModel, OperatingSystem operatingSystem,
             String category, String description, long createdById, String createdByName,
             long assignedToId, String assignedToName, TicketStatus status, boolean urgent,
             Instant createdAt, Instant updatedAt, Instant closedAt, List<Comment> comments, List<HistoryEvent> history) {}
     public record TicketDraft(
             String customerName, String customerPhone, DeviceType deviceType, String manufacturer,
-            String deviceModel, OperatingSystem operatingSystem, String category, String description, long actorId) {}
+            String deviceModel, String newDeviceModel, OperatingSystem operatingSystem, String category, String description, long actorId) {}
     public record TicketPatch(
             String customerName, String customerPhone, DeviceType deviceType, String manufacturer,
-            String deviceModel, OperatingSystem operatingSystem, String category, String description,
+            String deviceModel, String newDeviceModel, OperatingSystem operatingSystem, String category, String description,
             long actorId, long version) {}
     public record Bootstrap(List<Employee> employees, Long currentEmployeeId) {}
     public record CustomerMatch(long id, String name, String phoneNormalized, long previousTickets) {}

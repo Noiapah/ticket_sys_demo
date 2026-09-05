@@ -29,7 +29,7 @@ class ReportRedactionIntegrationTest {
     @Test
     void workbookOmitsCustomerAndNarrativeFields() throws Exception {
         var actor = employees.list().stream().findFirst().orElseGet(() -> employees.create("Markus"));
-        tickets.create(new TicketDraft("HEMMELIG NAVN", "99123456", DeviceType.PHONE, "Apple", "iPhone 15", OperatingSystem.IOS, "E-post", "HEMMELIG BESKRIVELSE", actor.id()));
+        tickets.create(new TicketDraft("HEMMELIG NAVN", "99123456", DeviceType.PHONE, "Apple", "iPhone 15", "", OperatingSystem.IOS, "E-post", "HEMMELIG BESKRIVELSE", actor.id()));
         var filter = new ReportFilter(LocalDate.now().minusDays(1), LocalDate.now().plusDays(1), null, null);
         var bytes = reports.workbook(filter);
         try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {

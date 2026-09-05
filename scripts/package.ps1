@@ -23,7 +23,7 @@ if ($SkipTests) { $buildArguments += '-DskipTests' }
 if ($LASTEXITCODE -ne 0) { throw 'Maven-byggingen feilet.' }
 & $maven dependency:copy-dependencies '-DincludeScope=runtime' '-DoutputDirectory=target/package-input'
 if ($LASTEXITCODE -ne 0) { throw 'Kopiering av runtime-avhengigheter feilet.' }
-$appVersion = '1.0.1'
+$appVersion = '1.0.2'
 $appJar = "phone-support-$appVersion.jar"
 Copy-Item -LiteralPath "target/$appJar" -Destination 'target/package-input' -Force
 

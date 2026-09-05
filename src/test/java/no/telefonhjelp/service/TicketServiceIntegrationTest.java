@@ -26,8 +26,9 @@ class TicketServiceIntegrationTest {
     @Test
     void createsAuditedTicketAndDoesNotEscalateOnReassignment() {
         var emma = employees.create("Emma"); var daniel = employees.create("Daniel");
-        var created = tickets.create(new TicketDraft("Ola Hansen", "99 12 34 56", DeviceType.PHONE, "Apple", "iPhone 15 Pro", OperatingSystem.IOS, "Konto / brukernavn / passord", "Kommer ikke inn.", emma.id()));
+        var created = tickets.create(new TicketDraft("Ola Hansen", "99 12 34 56", DeviceType.PHONE, "Apple", "iPhone 15 Pro", "iPhone 16 Pro", OperatingSystem.IOS, "Dataoverføring / sikkerhetskopi / oppsett", "Overfør innholdet.", emma.id()));
         assertThat(created.customerPhoneNormalized()).isEqualTo("+4799123456");
+        assertThat(created.newDeviceModel()).isEqualTo("iPhone 16 Pro");
         assertThat(created.status()).isEqualTo(TicketStatus.IN_PROGRESS);
         assertThat(created.history()).extracting(HistoryEvent::eventType).containsExactly("CREATED", "STATUS");
         var assigned = tickets.assign(created.id(), daniel.id(), emma.id(), created.version());
@@ -39,7 +40,7 @@ class TicketServiceIntegrationTest {
     @Test
     void rejectsStaleAndClosedWrites() {
         var actor = employees.list().stream().findFirst().orElseGet(() -> employees.create("Sofie"));
-        var created = tickets.create(new TicketDraft("Kari", "98044221", DeviceType.PHONE, "Samsung", "Samsung Galaxy S24", OperatingSystem.ANDROID, "App-problemer", "Appen stopper.", actor.id()));
+        var created = tickets.create(new TicketDraft("Kari", "98044221", DeviceType.PHONE, "Samsung", "Samsung Galaxy S24", "", OperatingSystem.ANDROID, "App-problemer", "Appen stopper.", actor.id()));
         var closed = tickets.status(created.id(), TicketStatus.CLOSED, actor.id(), created.version());
         assertThatThrownBy(() -> tickets.comment(closed.id(), "Skal ikke lagres", actor.id(), closed.version())).isInstanceOf(AppException.class).hasMessageContaining("Åpne saken igjen");
         var reopened = tickets.status(closed.id(), TicketStatus.IN_PROGRESS, actor.id(), closed.version());

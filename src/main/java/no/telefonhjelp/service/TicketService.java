@@ -36,8 +36,8 @@ public class TicketService {
         if (query != null && !query.isBlank()) {
             var needle = "%" + query.trim().toLowerCase(Locale.ROOT) + "%";
             var phone = "%" + PhoneNormalizer.normalize(query) + "%";
-            sql.append(" AND (CAST(t.id AS TEXT) LIKE ? OR lower(c.name) LIKE ? OR lower(c.phone_display) LIKE ? OR c.phone_normalized LIKE ? OR lower(t.device_model) LIKE ? OR lower(t.description) LIKE ?)");
-            args.addAll(List.of(needle, needle, needle, phone, needle, needle));
+            sql.append(" AND (CAST(t.id AS TEXT) LIKE ? OR lower(c.name) LIKE ? OR lower(c.phone_display) LIKE ? OR c.phone_normalized LIKE ? OR lower(t.device_model) LIKE ? OR lower(t.new_device_model) LIKE ? OR lower(t.description) LIKE ?)");
+            args.addAll(List.of(needle, needle, needle, phone, needle, needle, needle));
         }
         sql.append(" ORDER BY t.urgent DESC, t.created_at ASC");
         return jdbc.query(sql.toString(), this::mapTicketWithoutChildren, args.toArray()).stream().map(this::withChildren).toList();
@@ -54,11 +54,12 @@ public class TicketService {
         var actor = employees.require(draft.actorId(), true);
         validateDraft(draft.customerName(), draft.customerPhone(), draft.deviceModel(), draft.category(), draft.description());
         var now = Instant.now().toString();
+        var newDeviceModel = TRANSFER_CATEGORY.equals(draft.category().trim()) ? clean(draft.newDeviceModel()) : "";
         var customerId = upsertCustomer(draft.customerName().trim(), draft.customerPhone().trim(), now);
         var key = new GeneratedKeyHolder();
         jdbc.update(connection -> {
-            var statement = connection.prepareStatement("INSERT INTO tickets(customer_id,device_type,manufacturer,device_model,operating_system,category,description,created_by,assigned_to,status,urgent,created_at,updated_at,version) VALUES (?,?,?,?,?,?,?,?,?,'IN_PROGRESS',0,?,?,0)", Statement.RETURN_GENERATED_KEYS);
-            statement.setLong(1, customerId); statement.setString(2, draft.deviceType().name()); statement.setString(3, clean(draft.manufacturer())); statement.setString(4, draft.deviceModel().trim()); statement.setString(5, draft.operatingSystem().name()); statement.setString(6, draft.category().trim()); statement.setString(7, draft.description().trim()); statement.setLong(8, actor.id()); statement.setLong(9, actor.id()); statement.setString(10, now); statement.setString(11, now); return statement;
+            var statement = connection.prepareStatement("INSERT INTO tickets(customer_id,device_type,manufacturer,device_model,new_device_model,operating_system,category,description,created_by,assigned_to,status,urgent,created_at,updated_at,version) VALUES (?,?,?,?,?,?,?,?,?,?,'IN_PROGRESS',0,?,?,0)", Statement.RETURN_GENERATED_KEYS);
+            statement.setLong(1, customerId); statement.setString(2, draft.deviceType().name()); statement.setString(3, clean(draft.manufacturer())); statement.setString(4, draft.deviceModel().trim()); statement.setString(5, newDeviceModel); statement.setString(6, draft.operatingSystem().name()); statement.setString(7, draft.category().trim()); statement.setString(8, draft.description().trim()); statement.setLong(9, actor.id()); statement.setLong(10, actor.id()); statement.setString(11, now); statement.setString(12, now); return statement;
         }, key);
         var id = key.getKey().longValue();
         addHistory(id, actor.id(), "CREATED", "Saken ble opprettet", now);
@@ -74,6 +75,8 @@ public class TicketService {
         var customerPhone = choose(patch.customerPhone(), current.customerPhone());
         var deviceModel = choose(patch.deviceModel(), current.deviceModel());
         var category = choose(patch.category(), current.category());
+        var requestedNewDevice = patch.newDeviceModel() == null ? current.newDeviceModel() : clean(patch.newDeviceModel());
+        var newDeviceModel = TRANSFER_CATEGORY.equals(category) ? requestedNewDevice : "";
         var description = choose(patch.description(), current.description());
         validateDraft(customerName, customerPhone, deviceModel, category, description);
         var now = Instant.now().toString();
@@ -82,12 +85,13 @@ public class TicketService {
         changed(summaries, "Kundenavn", current.customerName(), customerName);
         changed(summaries, "Telefonnummer", current.customerPhone(), customerPhone);
         changed(summaries, "Kategori", current.category(), category);
+        changed(summaries, "Ny enhet", current.newDeviceModel(), newDeviceModel);
         changed(summaries, "Problem", current.description(), description);
         var type = patch.deviceType() == null ? current.deviceType() : patch.deviceType();
         var manufacturer = patch.manufacturer() == null ? current.manufacturer() : patch.manufacturer();
         var os = patch.operatingSystem() == null ? current.operatingSystem() : patch.operatingSystem();
         changed(summaries, "Enhet", deviceLabel(current.deviceType(), current.manufacturer(), current.deviceModel(), current.operatingSystem()), deviceLabel(type, manufacturer, deviceModel, os));
-        var rows = jdbc.update("UPDATE tickets SET customer_id=?,device_type=?,manufacturer=?,device_model=?,operating_system=?,category=?,description=?,updated_at=?,version=version+1 WHERE id=? AND version=?", customerId, type.name(), clean(manufacturer), deviceModel, os.name(), category, description, now, id, patch.version());
+        var rows = jdbc.update("UPDATE tickets SET customer_id=?,device_type=?,manufacturer=?,device_model=?,new_device_model=?,operating_system=?,category=?,description=?,updated_at=?,version=version+1 WHERE id=? AND version=?", customerId, type.name(), clean(manufacturer), deviceModel, newDeviceModel, os.name(), category, description, now, id, patch.version());
         if (rows != 1) throw AppException.conflict("Saken er endret. Last den inn på nytt.");
         summaries.forEach(summary -> addHistory(id, actor.id(), "EDITED", summary, now));
         return get(id);
@@ -159,13 +163,14 @@ public class TicketService {
     private Ticket withChildren(Ticket ticket) {
         var comments = jdbc.query("SELECT c.id,c.employee_id,e.name employee_name,c.text,c.created_at FROM comments c JOIN employees e ON e.id=c.employee_id WHERE c.ticket_id=? ORDER BY c.created_at", (rs, n) -> new Comment(rs.getLong("id"), rs.getLong("employee_id"), rs.getString("employee_name"), rs.getString("text"), Instant.parse(rs.getString("created_at"))), ticket.id());
         var history = jdbc.query("SELECT h.id,h.actor_employee_id,e.name actor_name,h.event_type,h.summary,h.created_at FROM ticket_history h JOIN employees e ON e.id=h.actor_employee_id WHERE h.ticket_id=? ORDER BY h.created_at,h.id", (rs, n) -> new HistoryEvent(rs.getLong("id"), rs.getLong("actor_employee_id"), rs.getString("actor_name"), rs.getString("event_type"), rs.getString("summary"), Instant.parse(rs.getString("created_at"))), ticket.id());
-        return new Ticket(ticket.id(), ticket.version(), ticket.customerName(), ticket.customerPhone(), ticket.customerPhoneNormalized(), ticket.deviceType(), ticket.manufacturer(), ticket.deviceModel(), ticket.operatingSystem(), ticket.category(), ticket.description(), ticket.createdById(), ticket.createdByName(), ticket.assignedToId(), ticket.assignedToName(), ticket.status(), ticket.urgent(), ticket.createdAt(), ticket.updatedAt(), ticket.closedAt(), comments, history);
+        return new Ticket(ticket.id(), ticket.version(), ticket.customerName(), ticket.customerPhone(), ticket.customerPhoneNormalized(), ticket.deviceType(), ticket.manufacturer(), ticket.deviceModel(), ticket.newDeviceModel(), ticket.operatingSystem(), ticket.category(), ticket.description(), ticket.createdById(), ticket.createdByName(), ticket.assignedToId(), ticket.assignedToName(), ticket.status(), ticket.urgent(), ticket.createdAt(), ticket.updatedAt(), ticket.closedAt(), comments, history);
     }
 
     private Ticket mapTicketWithoutChildren(ResultSet rs, int row) throws SQLException {
         var closed = rs.getString("closed_at");
-        return new Ticket(rs.getLong("id"), rs.getLong("version"), rs.getString("customer_name"), rs.getString("phone_display"), rs.getString("phone_normalized"), DeviceType.valueOf(rs.getString("device_type")), rs.getString("manufacturer"), rs.getString("device_model"), OperatingSystem.valueOf(rs.getString("operating_system")), rs.getString("category"), rs.getString("description"), rs.getLong("created_by"), rs.getString("created_by_name"), rs.getLong("assigned_to"), rs.getString("assigned_to_name"), TicketStatus.valueOf(rs.getString("status")), rs.getBoolean("urgent"), Instant.parse(rs.getString("created_at")), Instant.parse(rs.getString("updated_at")), closed == null ? null : Instant.parse(closed), List.of(), List.of());
+        return new Ticket(rs.getLong("id"), rs.getLong("version"), rs.getString("customer_name"), rs.getString("phone_display"), rs.getString("phone_normalized"), DeviceType.valueOf(rs.getString("device_type")), rs.getString("manufacturer"), rs.getString("device_model"), rs.getString("new_device_model"), OperatingSystem.valueOf(rs.getString("operating_system")), rs.getString("category"), rs.getString("description"), rs.getLong("created_by"), rs.getString("created_by_name"), rs.getLong("assigned_to"), rs.getString("assigned_to_name"), TicketStatus.valueOf(rs.getString("status")), rs.getBoolean("urgent"), Instant.parse(rs.getString("created_at")), Instant.parse(rs.getString("updated_at")), closed == null ? null : Instant.parse(closed), List.of(), List.of());
     }
 
     private static final String BASE_SQL = "SELECT t.*,c.name customer_name,c.phone_display,c.phone_normalized,creator.name created_by_name,assigned.name assigned_to_name FROM tickets t JOIN customers c ON c.id=t.customer_id JOIN employees creator ON creator.id=t.created_by JOIN employees assigned ON assigned.id=t.assigned_to";
+    private static final String TRANSFER_CATEGORY = "Dataoverføring / sikkerhetskopi / oppsett";
 }
