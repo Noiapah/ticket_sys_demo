@@ -47,7 +47,11 @@ class ReportRedactionIntegrationTest {
             var rendered = new StringBuilder();
             workbook.forEach(sheet -> sheet.forEach(row -> row.forEach(cell -> rendered.append(cell.toString()).append('\n'))));
             assertThat(rendered.toString()).doesNotContain("HEMMELIG NAVN", "HEMMELIG BESKRIVELSE", "99123456");
-            assertThat(workbook.getSheet("Saker").getRow(0).getPhysicalNumberOfCells()).isEqualTo(10);
+            assertThat(workbook.getSheet("Saker").getRow(0).getPhysicalNumberOfCells()).isEqualTo(13);
+            assertThat(workbook.getSheet("Sammendrag").getDrawingPatriarch().getCharts()).hasSize(2);
+            assertThat(workbook.getSheet("Kategorier").getDrawingPatriarch().getCharts()).hasSize(1);
+            assertThat(workbook.getSheet("Trender").getDrawingPatriarch().getCharts()).hasSize(1);
+            assertThat(workbook.getNumberOfSheets()).isEqualTo(7);
         }
     }
 }
