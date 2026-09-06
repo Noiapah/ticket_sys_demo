@@ -6,6 +6,7 @@ interface Window {
   desktop?: {
     chooseBackupPath(): string
     chooseRestorePath(): string
+    saveDownload(fileName: string, base64Data: string): string
     exitApplication(): void
   }
 }

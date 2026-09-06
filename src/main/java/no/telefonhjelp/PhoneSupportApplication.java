@@ -8,6 +8,8 @@ import javafx.stage.Screen;
 import javafx.stage.Stage;
 import javafx.stage.FileChooser;
 import javafx.concurrent.Worker;
+import com.sun.jna.platform.win32.KnownFolders;
+import com.sun.jna.platform.win32.Shell32Util;
 import no.telefonhjelp.config.StoragePaths;
 import netscape.javascript.JSObject;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -17,11 +19,16 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.context.ConfigurableApplicationContext;
 
 import java.io.IOException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.file.StandardOpenOption;
 import java.io.File;
 import java.time.LocalDate;
+import java.util.Base64;
+import java.util.Locale;
 
 @SpringBootApplication
 @EnableScheduling
@@ -134,7 +141,30 @@ public class PhoneSupportApplication extends Application {
             return selected == null ? "" : selected.getAbsolutePath();
         }
 
+        public String saveDownload(String fileName, String base64Data) throws IOException {
+            var safeName = Path.of(fileName).getFileName().toString();
+            if (!safeName.toLowerCase(Locale.ROOT).endsWith(".xlsx")) throw new IOException("Rapporten må være en Excel-fil.");
+            var downloads = downloadsDirectory();
+            Files.createDirectories(downloads);
+            var extensionIndex = safeName.length() - ".xlsx".length();
+            var baseName = safeName.substring(0, extensionIndex);
+            var content = Base64.getDecoder().decode(base64Data);
+            for (var copy = 0; ; copy++) {
+                var candidateName = copy == 0 ? safeName : baseName + " (" + copy + ").xlsx";
+                var destination = downloads.resolve(candidateName);
+                try {
+                    Files.write(destination, content, StandardOpenOption.CREATE_NEW);
+                    return destination.toString();
+                } catch (FileAlreadyExistsException ignored) { }
+            }
+        }
+
         public void exitApplication() { Platform.runLater(Platform::exit); }
+
+        private Path downloadsDirectory() {
+            try { return Path.of(Shell32Util.getKnownFolderPath(KnownFolders.FOLDERID_Downloads)); }
+            catch (RuntimeException | LinkageError ignored) { return Path.of(System.getProperty("user.home"), "Downloads"); }
+        }
 
         private FileChooser databaseChooser(String title) {
             var chooser = new FileChooser();
