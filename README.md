@@ -14,6 +14,14 @@ npm run dev
 Kommandoene kjøres fra prosjektroten. `npm run dev` bruker Vites `mock`-modus med minnedata. Produksjonsbygg bruker HTTP-gatewayen og inkluderer ikke mock-filer. For hele programmet:
 
 ```powershell
+npm run new-version
+```
+
+`new-version` konfigurerer prosjektets lokale Java- og Node-verktøy, bygger siste kildekode og starter skrivebordsprogrammet. Hold terminalvinduet åpent mens programmet kjører.
+
+Den tilsvarende manuelle kommandoen er:
+
+```powershell
 $env:JAVA_HOME = 'C:\sti\til\jdk-25'
 .\mvnw.cmd compile javafx:run
 ```
