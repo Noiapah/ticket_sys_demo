@@ -1,42 +1,78 @@
 import type { Ticket } from '../domain/types'
+import { categories, TRANSFER_CATEGORY } from '../data/categories'
+import { seedEmployees } from './employees'
 
 const now = Date.now()
 const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString()
 
-export const seedTickets: Ticket[] = [
-  {
-    id: 184, version: 1, customerName: 'Ola Hansen', customerPhone: '991 23 456', customerPhoneNormalized: '+4799123456',
-    deviceType: 'PHONE', manufacturer: 'Apple', deviceModel: 'iPhone 15 Pro', newDeviceModel: 'iPhone 16 Pro', operatingSystem: 'IOS',
-    category: 'Dataoverføring / sikkerhetskopi / oppsett', description: 'Overfør data fra gammel Samsung til ny iPhone.',
-    createdById: 1, createdByName: 'Emma', assignedToId: 1, assignedToName: 'Emma', status: 'IN_PROGRESS', urgent: false,
-    createdAt: ago(12), updatedAt: ago(12), comments: [],
-    history: [
-      { id: 1, actorEmployeeId: 1, actorName: 'Emma', eventType: 'CREATED', summary: 'Saken ble opprettet', createdAt: ago(12) },
-      { id: 2, actorEmployeeId: 1, actorName: 'Emma', eventType: 'STATUS', summary: 'Status satt til Pågår', createdAt: ago(12) }
-    ]
-  },
-  {
-    id: 185, version: 1, customerName: 'Kari Olsen', customerPhone: '980 44 221', customerPhoneNormalized: '+4798044221',
-    deviceType: 'PHONE', manufacturer: 'Samsung', deviceModel: 'Samsung Galaxy S24', newDeviceModel: '', operatingSystem: 'ANDROID',
-    category: 'Konto / brukernavn / passord', description: 'Kommer ikke inn på Google-konto.',
-    createdById: 2, createdByName: 'Daniel', assignedToId: 2, assignedToName: 'Daniel', status: 'WAITING', urgent: false,
-    createdAt: ago(43), updatedAt: ago(8), comments: [{ id: 1, employeeId: 2, employeeName: 'Daniel', text: 'Kunden leter etter gjenopprettingskode.', createdAt: ago(8) }],
-    history: [{ id: 3, actorEmployeeId: 2, actorName: 'Daniel', eventType: 'CREATED', summary: 'Saken ble opprettet', createdAt: ago(43) }]
-  },
-  {
-    id: 186, version: 1, customerName: 'Per Nilsen', customerPhone: '412 09 876', customerPhoneNormalized: '+4741209876',
-    deviceType: 'PHONE', manufacturer: 'Google', deviceModel: 'Google Pixel 9', newDeviceModel: '', operatingSystem: 'ANDROID',
-    category: 'App-problemer', description: 'BankID stopper under aktivering.',
-    createdById: 1, createdByName: 'Emma', assignedToId: 1, assignedToName: 'Emma', status: 'ESCALATED', urgent: true,
-    createdAt: ago(78), updatedAt: ago(3), comments: [],
-    history: [{ id: 4, actorEmployeeId: 1, actorName: 'Emma', eventType: 'URGENT', summary: 'Markert som haster', createdAt: ago(3) }]
-  },
-  {
-    id: 176, version: 2, customerName: 'Lise Berg', customerPhone: '930 11 202', customerPhoneNormalized: '+4793011202',
-    deviceType: 'PHONE', manufacturer: 'Doro', deviceModel: 'Doro Smartphone', newDeviceModel: '', operatingSystem: 'ANDROID',
-    category: 'Systemproblemer', description: 'Varslinger var slått av.',
-    createdById: 4, createdByName: 'Sofie', assignedToId: 4, assignedToName: 'Sofie', status: 'CLOSED', urgent: false,
-    createdAt: ago(2880), updatedAt: ago(2820), closedAt: ago(2820), comments: [],
-    history: [{ id: 5, actorEmployeeId: 4, actorName: 'Sofie', eventType: 'CLOSED', summary: 'Saken ble lukket', createdAt: ago(2820) }]
-  }
+const firstNames = ['Ola', 'Kari', 'Per', 'Lise', 'Anne', 'Jon', 'Mina', 'Emil', 'Sara', 'Arne']
+const lastNames = ['Hansen', 'Olsen', 'Nilsen', 'Berg', 'Johansen', 'Larsen', 'Solheim']
+const descriptions = [
+  'Trenger hjelp til å overføre innhold og kontrollere sikkerhetskopien.',
+  'Telefonen mister forbindelsen til trådløst nettverk.',
+  'Kunden kommer ikke inn på kontoen sin.',
+  'E-post synkroniseres ikke på den nye enheten.',
+  'Mistenkelig popup vises når nettleseren åpnes.',
+  'Appen avsluttes under oppstart.',
+  'Varslinger og lyd virker ikke som forventet.',
+  'Generell veiledning og kontroll av innstillinger.'
 ]
+const devices: Array<Pick<Ticket, 'deviceType' | 'manufacturer' | 'deviceModel' | 'operatingSystem'>> = [
+  { deviceType: 'PHONE', manufacturer: 'Apple', deviceModel: 'iPhone 16', operatingSystem: 'IOS' },
+  { deviceType: 'PHONE', manufacturer: 'Samsung', deviceModel: 'Samsung Galaxy S25', operatingSystem: 'ANDROID' },
+  { deviceType: 'PHONE', manufacturer: 'Google', deviceModel: 'Google Pixel 9', operatingSystem: 'ANDROID' },
+  { deviceType: 'PHONE', manufacturer: 'Doro', deviceModel: 'Doro Smartphone', operatingSystem: 'ANDROID' },
+  { deviceType: 'TABLET', manufacturer: 'Apple', deviceModel: 'iPad Air', operatingSystem: 'IOS' },
+  { deviceType: 'TABLET', manufacturer: 'Samsung', deviceModel: 'Samsung Galaxy Tab S10', operatingSystem: 'ANDROID' },
+  { deviceType: 'SMARTWATCH', manufacturer: 'Apple', deviceModel: 'Apple Watch Series 10', operatingSystem: 'IOS' },
+  { deviceType: 'COMPUTER', manufacturer: 'Lenovo', deviceModel: 'Lenovo IdeaPad', operatingSystem: 'OTHER' }
+]
+const statuses: Ticket['status'][] = ['CLOSED', 'CLOSED', 'CLOSED', 'CLOSED', 'CLOSED', 'CLOSED', 'IN_PROGRESS', 'IN_PROGRESS', 'WAITING', 'ESCALATED']
+const resolutionMinutes = [18, 45, 80, 150]
+
+function phoneDisplay(number: string) {
+  return `${number.slice(0, 2)} ${number.slice(2, 4)} ${number.slice(4, 6)} ${number.slice(6, 8)}`
+}
+
+export const seedTickets: Ticket[] = Array.from({ length: 140 }, (_, offset) => {
+  const sequence = offset + 1
+  const id = 1000 + sequence
+  const customerNumber = (offset % 70) + 1
+  const localPhone = String(45_000_000 + customerNumber)
+  const createdMinutesAgo = (141 - sequence) * 35
+  const status = statuses[offset % statuses.length]
+  const duration = resolutionMinutes[offset % resolutionMinutes.length]
+  const category = categories[offset % categories.length]
+  const creator = seedEmployees[offset % seedEmployees.length]
+  const assignee = seedEmployees[(offset + 2) % seedEmployees.length]
+  const urgent = sequence % 11 === 0
+  const actionMinutesAgo = status === 'CLOSED' ? createdMinutesAgo - duration : createdMinutesAgo - 10
+  const history = [
+    { id: id * 10, actorEmployeeId: creator.id, actorName: creator.name, eventType: 'CREATED', summary: 'Saken ble opprettet', createdAt: ago(createdMinutesAgo) },
+    { id: id * 10 + 1, actorEmployeeId: assignee.id, actorName: assignee.name, eventType: status === 'CLOSED' ? 'CLOSED' : 'STATUS', summary: status === 'CLOSED' ? 'Saken ble lukket' : status === 'ESCALATED' ? 'Status satt til Eskalert' : status === 'WAITING' ? 'Status satt til Venter' : 'Status satt til Pågår', createdAt: ago(actionMinutesAgo) }
+  ]
+  if (urgent) history.push({ id: id * 10 + 2, actorEmployeeId: creator.id, actorName: creator.name, eventType: 'URGENT', summary: 'Markert som haster', createdAt: ago(actionMinutesAgo) })
+
+  return {
+    id,
+    version: history.length,
+    customerName: `${firstNames[offset % firstNames.length]} ${lastNames[Math.floor(offset / firstNames.length) % lastNames.length]}`,
+    customerPhone: phoneDisplay(localPhone),
+    customerPhoneNormalized: `+47${localPhone}`,
+    ...devices[offset % devices.length],
+    newDeviceModel: category === TRANSFER_CATEGORY ? 'iPhone 17' : '',
+    category,
+    description: descriptions[offset % descriptions.length],
+    createdById: creator.id,
+    createdByName: creator.name,
+    assignedToId: assignee.id,
+    assignedToName: assignee.name,
+    status,
+    urgent,
+    createdAt: ago(createdMinutesAgo),
+    updatedAt: ago(actionMinutesAgo),
+    closedAt: status === 'CLOSED' ? ago(actionMinutesAgo) : null,
+    comments: sequence % 4 === 0 ? [{ id: id, employeeId: assignee.id, employeeName: assignee.name, text: 'Kunden er oppdatert. Saken følges opp som avtalt.', createdAt: ago(createdMinutesAgo - 8) }] : [],
+    history
+  }
+})

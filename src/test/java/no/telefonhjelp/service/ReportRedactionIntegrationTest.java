@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.annotation.DirtiesContext;
@@ -25,6 +26,16 @@ class ReportRedactionIntegrationTest {
     @Autowired EmployeeService employees;
     @Autowired TicketService tickets;
     @Autowired ReportService reports;
+    @Autowired JdbcTemplate jdbc;
+
+    @Test
+    void migrationAddsRepresentativeDemoData() {
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM employees WHERE name IN ('Amalie','Henrik','Silje','Tobias','Mathilde','Sander','Nora','Eirik')", Long.class)).isEqualTo(8);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM employees WHERE name IN ('Nora','Eirik') AND active=0", Long.class)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tickets WHERE substr(description,1,6)='[DEMO]'", Long.class)).isEqualTo(140);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tickets WHERE substr(description,1,6)='[DEMO]' AND status='CLOSED'", Long.class)).isEqualTo(84);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM tickets WHERE substr(description,1,6)='[DEMO]' AND status<>'CLOSED'", Long.class)).isEqualTo(56);
+    }
 
     @Test
     void workbookOmitsCustomerAndNarrativeFields() throws Exception {

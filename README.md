@@ -58,6 +58,10 @@ npm run typecheck
 
 `npm test` kjører de rene domene-testene i Node. `npm run build` lager grensesnittet i `target/frontend`; `.\mvnw.cmd package` lager også Java-appen.
 
+## Demodata
+
+Utviklingsmodusen og skrivebordsdatabasen inneholder et representativt datasett for rapporttesting: 8 ansatte (2 deaktiverte), 70 kunder og 140 saker fordelt på åpne, ventende, eskalerte og lukkede saker. Flyway legger datasettet inn én gang via `V3__add_demo_report_data.sql`; eksisterende data beholdes. Velg en rapportperiode som dekker de siste fem dagene for å få med hele datasettet i Excel-rapporten.
+
 ## Windows-pakking
 
 Bygg installasjonsprogrammet med `.\scripts\package.ps1`. Det krever WiX 3 (`candle.exe` og `light.exe`) på `PATH`; resultatet legges i `releases`. Skriptet kjører Java-testene med mindre `-SkipTests` er angitt. En appmappe med runtime kan bygges med `.\scripts\package.ps1 -Type app-image`; den legges i `target/jpackage`.
