@@ -198,7 +198,7 @@ public class ReportService {
                 (rs, n) -> new Object[]{rs.getString("name"), rs.getLong("handled")}, args.toArray());
         for (var i = 0; i < values.size(); i++) row(sheet, i + 1, i % 2 == 0 ? styles.body() : styles.stripe(), values.get(i));
         finishTable(sheet, values.size(), 2);
-        addColumnChart(sheet, "Saker per ansatt", 0, 1, 1, values.size(), 3, 1, 12, 20, "Saker med handlinger");
+        addHorizontalBarChart(sheet, "Saker per ansatt", 0, 1, 1, values.size(), 3, 1, 12, 20, "Saker med handlinger");
     }
 
     private void groupedSheet(XSSFWorkbook workbook, String sheetName, String heading, String column, ReportFilter filter, Styles styles) {
@@ -211,7 +211,7 @@ public class ReportService {
                 (rs, n) -> new Object[]{rs.getString("label"), rs.getLong("amount")}, args.toArray());
         for (var i = 0; i < values.size(); i++) row(sheet, i + 1, i % 2 == 0 ? styles.body() : styles.stripe(), values.get(i));
         finishTable(sheet, values.size(), 2);
-        addColumnChart(sheet, "Fordeling per " + heading.toLowerCase(NORWEGIAN), 0, 1, 1, values.size(), 3, 1, 12, 20, "Antall saker");
+        addHorizontalBarChart(sheet, "Fordeling per " + heading.toLowerCase(NORWEGIAN), 0, 1, 1, values.size(), 3, 1, 12, 20, "Antall saker");
     }
 
     private void trendSheet(XSSFWorkbook workbook, ReportFilter filter, ReportData data, Styles styles) {
@@ -224,6 +224,7 @@ public class ReportService {
         }
         finishTable(sheet, points.size(), 3);
         addLineChart(sheet, "Utvikling over tid", 0, 1, 2, 1, points.size(), 4, 1, 14, 22);
+        addComparisonChart(sheet, "Sammenligning: opprettet mot lukket", 0, 1, 2, 1, points.size(), 4, 24, 14, 45);
     }
 
     private static List<TrendPoint> trendPoints(ReportFilter filter, ReportData data) {
@@ -356,6 +357,19 @@ public class ReportService {
         chart.plot(data);
     }
 
+    private static void addHorizontalBarChart(XSSFSheet sheet, String title, int categoryColumn, int valueColumn, int firstRow, int lastRow, int left, int top, int right, int bottom, String seriesTitle) {
+        if (lastRow < firstRow) return;
+        var chart = chart(sheet, title, left, top, right, bottom);
+        var categoryAxis = chart.createCategoryAxis(AxisPosition.LEFT);
+        var valueAxis = chart.createValueAxis(AxisPosition.BOTTOM); valueAxis.setCrosses(AxisCrosses.AUTO_ZERO);
+        var categories = XDDFDataSourcesFactory.fromStringCellRange(sheet, new CellRangeAddress(firstRow, lastRow, categoryColumn, categoryColumn));
+        var values = XDDFDataSourcesFactory.fromNumericCellRange(sheet, new CellRangeAddress(firstRow, lastRow, valueColumn, valueColumn));
+        var data = (XDDFBarChartData) chart.createData(ChartTypes.BAR, categoryAxis, valueAxis);
+        data.setBarDirection(BarDirection.BAR); data.setBarGrouping(BarGrouping.CLUSTERED); data.setVaryColors(true);
+        data.addSeries(categories, values).setTitle(seriesTitle, null);
+        chart.plot(data);
+    }
+
     private static void addPieChart(XSSFSheet sheet, String title, int categoryColumn, int valueColumn, int firstRow, int lastRow, int left, int top, int right, int bottom) {
         if (lastRow < firstRow) return;
         var chart = chart(sheet, title, left, top, right, bottom);
@@ -377,6 +391,19 @@ public class ReportService {
         created.setTitle("Opprettet", null); created.setMarkerStyle(MarkerStyle.CIRCLE);
         var closed = (XDDFLineChartData.Series) data.addSeries(categories, XDDFDataSourcesFactory.fromNumericCellRange(sheet, new CellRangeAddress(firstRow, lastRow, closedColumn, closedColumn)));
         closed.setTitle("Lukket", null); closed.setMarkerStyle(MarkerStyle.DIAMOND);
+        chart.plot(data);
+    }
+
+    private static void addComparisonChart(XSSFSheet sheet, String title, int categoryColumn, int createdColumn, int closedColumn, int firstRow, int lastRow, int left, int top, int right, int bottom) {
+        if (lastRow < firstRow) return;
+        var chart = chart(sheet, title, left, top, right, bottom);
+        var categoryAxis = chart.createCategoryAxis(AxisPosition.BOTTOM);
+        var valueAxis = chart.createValueAxis(AxisPosition.LEFT); valueAxis.setCrosses(AxisCrosses.AUTO_ZERO);
+        var categories = XDDFDataSourcesFactory.fromStringCellRange(sheet, new CellRangeAddress(firstRow, lastRow, categoryColumn, categoryColumn));
+        var data = (XDDFBarChartData) chart.createData(ChartTypes.BAR, categoryAxis, valueAxis);
+        data.setBarDirection(BarDirection.COL); data.setBarGrouping(BarGrouping.CLUSTERED); data.setVaryColors(false);
+        data.addSeries(categories, XDDFDataSourcesFactory.fromNumericCellRange(sheet, new CellRangeAddress(firstRow, lastRow, createdColumn, createdColumn))).setTitle("Opprettet", null);
+        data.addSeries(categories, XDDFDataSourcesFactory.fromNumericCellRange(sheet, new CellRangeAddress(firstRow, lastRow, closedColumn, closedColumn))).setTitle("Lukket", null);
         chart.plot(data);
     }
 
