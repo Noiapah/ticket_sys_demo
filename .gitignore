@@ -13,3 +13,6 @@ node_modules/
 .idea/
 *.iml
 .env.local
+
+# Local security review
+/SECURITY_REVIEW.md
