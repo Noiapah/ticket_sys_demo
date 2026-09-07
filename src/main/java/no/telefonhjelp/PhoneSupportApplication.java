@@ -3,6 +3,9 @@ package no.telefonhjelp;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonBar.ButtonData;
+import javafx.scene.control.ButtonType;
 import javafx.scene.web.WebView;
 import javafx.stage.Screen;
 import javafx.stage.Stage;
@@ -76,6 +79,15 @@ public class PhoneSupportApplication extends Application {
         var port = ((WebServerApplicationContext) context).getWebServer().getPort();
         var webView = new WebView();
         webView.setContextMenuEnabled(false);
+        webView.getEngine().setConfirmHandler(message -> {
+            var confirm = new ButtonType("Ja", ButtonData.OK_DONE);
+            var cancel = new ButtonType("Avbryt", ButtonData.CANCEL_CLOSE);
+            var dialog = new Alert(Alert.AlertType.CONFIRMATION, message, confirm, cancel);
+            dialog.initOwner(stage);
+            dialog.setTitle("Telefonhjelp");
+            dialog.setHeaderText(null);
+            return dialog.showAndWait().orElse(cancel) == confirm;
+        });
         desktopBridge = new DesktopBridge(stage);
         webView.getEngine().getLoadWorker().stateProperty().addListener((observable, oldState, state) -> {
             if (state == Worker.State.SUCCEEDED) {
