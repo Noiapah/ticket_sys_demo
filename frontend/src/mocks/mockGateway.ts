@@ -47,7 +47,7 @@ export const gateway: TicketGateway = {
   async bootstrap() { return { employees: copy(employees), currentEmployeeId } },
   async setCurrentEmployee(id) { currentEmployeeId = id },
   async matchCustomer(phone) { const normalized = normalizePhone(phone).normalized; const matches = tickets.filter(item => item.customerPhoneNormalized === normalized); return matches.length ? { id: matches[0].id, name: matches[0].customerName, phoneNormalized: normalized, previousTickets: matches.length } : null },
-  async listTickets(query) { return copy(filtered(query)) },
+  async listTickets(query) { const page = query?.page ?? 0; const size = query?.size ?? 50; return copy(filtered(query).sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.createdAt.localeCompare(b.createdAt) || a.id - b.id).slice(page * size, (page + 1) * size).map(item => ({ ...item, comments: [], history: [] }))) },
   async getTicket(id) { return copy(ticket(id)) },
   async createTicket(draft: TicketDraft, actorId: number) {
     const actor = employee(actorId)

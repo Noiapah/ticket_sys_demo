@@ -1,26 +1,35 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AgeIndicator from '../components/AgeIndicator.vue'
 import DeviceAutocomplete from '../components/DeviceAutocomplete.vue'
 import { categories, TRANSFER_CATEGORY } from '../data/categories'
 import { dateTime, formatPhone, timeOnly } from '../domain/format'
-import { statusLabels, type OperatingSystem, type TemporaryCredential, type Ticket, type TicketStatus } from '../domain/types'
+import { statusLabels, type OperatingSystem, type Ticket, type TicketStatus } from '../domain/types'
 import { gateway } from '../gateway'
 import { useAppStore } from '../stores/app'
+import { SecretExposure } from '../domain/secretExposure'
 
 const route = useRoute(); const app = useAppStore()
 const item = ref<Ticket | null>(null); const loading = ref(true); const busy = ref(false); const error = ref(''); const comment = ref(''); const editing = ref(false); const otherModel = ref(false)
 const edit = reactive({ customerName: '', customerPhone: '', deviceModel: '', newDeviceModel: '', manufacturer: '', operatingSystem: 'OTHER' as OperatingSystem, category: '', description: '' })
-const credentials = ref<TemporaryCredential[]>([])
-const credentialForm = reactive<Record<string, string>>({ account: '', code: '', simPin: '', temporaryPassword: '' })
+const exposure = reactive(new SecretExposure())
+const credentials = computed(() => exposure.credentials)
+const credentialForm = exposure.values
 const credentialExists = (key: string) => credentials.value.some(value => value.key === key)
 const accountLabel = computed(() => item.value?.operatingSystem === 'IOS' ? 'Apple-konto' : item.value?.operatingSystem === 'ANDROID' ? 'Google-konto' : 'Konto')
 const codeLabel = computed(() => item.value?.operatingSystem === 'IOS' || item.value?.operatingSystem === 'ANDROID' ? 'Skjermkode' : 'Enhetskode')
 const active = computed(() => item.value?.status !== 'CLOSED')
 
 function apply(ticket: Ticket) { item.value = ticket; Object.assign(edit, { customerName: ticket.customerName, customerPhone: ticket.customerPhone, deviceModel: ticket.deviceModel, newDeviceModel: ticket.newDeviceModel, manufacturer: ticket.manufacturer, operatingSystem: ticket.operatingSystem, category: ticket.category, description: ticket.description }) }
-async function load() { loading.value = true; try { apply(await gateway.getTicket(Number(route.params.id))); credentials.value = await gateway.getTemporaryInfo(Number(route.params.id)); credentials.value.forEach(value => credentialForm[value.key] = value.value) } catch (cause) { error.value = message(cause) } finally { loading.value = false } }
+let ticketLoad = 0
+async function load() { const generation = ++ticketLoad; exposure.clear(); loading.value = true; try { const ticket = await gateway.getTicket(Number(route.params.id)); if (generation === ticketLoad) apply(ticket) } catch (cause) { if (generation === ticketLoad) error.value = message(cause) } finally { if (generation === ticketLoad) loading.value = false } }
+async function revealCredentials() {
+  if (!item.value || exposure.busy) return
+  const generation = exposure.begin()
+  try { exposure.accept(generation, await gateway.getTemporaryInfo(item.value.id)) }
+  catch (cause) { exposure.failed(generation); error.value = message(cause) }
+}
 const message = (cause: unknown) => cause instanceof Error ? cause.message : 'Noe gikk galt.'
 async function action(operation: (ticket: Ticket) => Promise<Ticket>) { if (!item.value) return; busy.value = true; error.value = ''; try { apply(await operation(item.value)) } catch (cause) { error.value = message(cause) } finally { busy.value = false } }
 async function setStatus(status: TicketStatus) { if (!item.value || !app.currentEmployeeId) return; await action(ticket => gateway.setStatus(ticket.id, status, app.currentEmployeeId!, ticket.version)) }
@@ -28,10 +37,48 @@ async function assign(employeeId: number) { if (!item.value || !app.currentEmplo
 async function toggleUrgent() { if (!item.value || !app.currentEmployeeId) return; await action(ticket => gateway.setUrgent(ticket.id, !ticket.urgent, app.currentEmployeeId!, ticket.version)) }
 async function addComment() { if (!item.value || !app.currentEmployeeId || !comment.value.trim()) return; const text = comment.value; comment.value = ''; await action(ticket => gateway.addComment(ticket.id, text, app.currentEmployeeId!, ticket.version)) }
 async function saveEdit() { if (!item.value || !app.currentEmployeeId) return; await action(ticket => gateway.updateTicket(ticket.id, { ...edit, deviceType: ticket.deviceType, version: ticket.version }, app.currentEmployeeId!)); editing.value = false }
-async function saveCredentials() { if (!item.value) return; const existing = new Map(credentials.value.map(value => [value.key, value.value])); const changed = [{ key: 'account', label: accountLabel.value, value: credentialForm.account }, { key: 'code', label: codeLabel.value, value: credentialForm.code }, { key: 'simPin', label: 'SIM-PIN', value: credentialForm.simPin }, { key: 'temporaryPassword', label: 'Midlertidig passord', value: credentialForm.temporaryPassword }].filter(value => existing.has(value.key) ? existing.get(value.key) !== value.value.trim() : Boolean(value.value.trim())); if (!changed.length) return; try { credentials.value = await gateway.saveTemporaryInfo(item.value.id, changed) } catch (cause) { error.value = message(cause) } }
-async function clearCredential(key: string) { if (!item.value) return; try { await gateway.clearTemporaryInfo(item.value.id, key); credentialForm[key] = ''; credentials.value = credentials.value.filter(value => value.key !== key) } catch (cause) { error.value = message(cause) } }
-async function clearCredentials() { if (!item.value) return; await gateway.clearTemporaryInfo(item.value.id); Object.keys(credentialForm).forEach(key => credentialForm[key] = ''); credentials.value = [] }
-onMounted(load)
+async function saveCredentials() {
+  exposure.expire()
+  if (!item.value || !exposure.loaded || exposure.busy) return
+  const existing = new Map(credentials.value.map(value => [value.key, value.value]))
+  const changed = [{ key: 'account', label: accountLabel.value, value: credentialForm.account }, { key: 'code', label: codeLabel.value, value: credentialForm.code }, { key: 'simPin', label: 'SIM-PIN', value: credentialForm.simPin }, { key: 'temporaryPassword', label: 'Midlertidig passord', value: credentialForm.temporaryPassword }].filter(value => existing.has(value.key) ? existing.get(value.key) !== value.value.trim() : Boolean(value.value.trim()))
+  if (!changed.length) return
+  const generation = exposure.begin()
+  try { exposure.accept(generation, await gateway.saveTemporaryInfo(item.value.id, changed)) }
+  catch (cause) { exposure.failed(generation); error.value = message(cause) }
+}
+async function clearCredential(key?: string) {
+  if (!item.value) return
+  exposure.clear()
+  try { await gateway.clearTemporaryInfo(item.value.id, key) } catch (cause) { error.value = message(cause) }
+}
+const clearCredentials = () => clearCredential()
+const clearExposure = () => exposure.clear()
+const checkExposure = () => exposure.expire()
+const recordActivity = () => exposure.activity()
+const onVisibility = () => document.hidden ? exposure.clear() : exposure.expire()
+let secretTimer: number
+watch(() => app.currentEmployeeId, clearExposure, { flush: 'sync' })
+watch(() => route.params.id, load)
+onMounted(() => {
+  void load()
+  secretTimer = window.setInterval(checkExposure, 1000)
+  window.addEventListener('focus', checkExposure)
+  window.addEventListener('blur', clearExposure)
+  window.addEventListener('session-ended', clearExposure)
+  window.addEventListener('pointerdown', recordActivity)
+  window.addEventListener('keydown', recordActivity)
+  document.addEventListener('visibilitychange', onVisibility)
+})
+onBeforeUnmount(() => {
+  ticketLoad++; exposure.clear(); window.clearInterval(secretTimer)
+  window.removeEventListener('focus', checkExposure)
+  window.removeEventListener('blur', clearExposure)
+  window.removeEventListener('session-ended', clearExposure)
+  window.removeEventListener('pointerdown', recordActivity)
+  window.removeEventListener('keydown', recordActivity)
+  document.removeEventListener('visibilitychange', onVisibility)
+})
 </script>
 
 <template>
@@ -55,7 +102,19 @@ onMounted(load)
       </div>
       <aside class="detail-side">
         <section class="card section-card"><h2>Behandling</h2><label>Tildelt til<select :value="item.assignedToId" :disabled="busy || !active" @change="assign(Number(($event.target as HTMLSelectElement).value))"><option v-for="employee in app.activeEmployees" :key="employee.id" :value="employee.id">{{ employee.name }}</option></select></label><label>Status<select :value="item.status" :disabled="busy || !active" @change="setStatus(($event.target as HTMLSelectElement).value as TicketStatus)"><option v-for="(label, status) in statusLabels" :key="status" :value="status" :disabled="status === 'CLOSED'">{{ label }}</option></select></label><button v-if="active" class="button button--danger button--block" :disabled="busy" @click="setStatus('CLOSED')">Lukk saken</button><button v-else class="button button--primary button--block" :disabled="busy" @click="setStatus('IN_PROGRESS')">Åpne saken igjen</button></section>
-        <section class="card section-card sensitive"><div class="section-heading"><div><p class="eyebrow">Midlertidig</p><h2>Sensitiv informasjon</h2></div><span>ⓘ</span></div><p class="sensitive-note">Hvert felt slettes 24 timer etter siste lagring. Ikke skriv dette i kommentarer.</p><label><span class="sensitive-label">{{ accountLabel }}<button v-if="credentialExists('account')" class="text-button danger" @click.prevent="clearCredential('account')">Slett</button></span><input v-model="credentialForm.account" :disabled="!active" /></label><label><span class="sensitive-label">{{ codeLabel }}<button v-if="credentialExists('code')" class="text-button danger" @click.prevent="clearCredential('code')">Slett</button></span><input v-model="credentialForm.code" :disabled="!active" /></label><label><span class="sensitive-label">SIM-PIN<button v-if="credentialExists('simPin')" class="text-button danger" @click.prevent="clearCredential('simPin')">Slett</button></span><input v-model="credentialForm.simPin" :disabled="!active" /></label><label><span class="sensitive-label">Midlertidig passord<button v-if="credentialExists('temporaryPassword')" class="text-button danger" @click.prevent="clearCredential('temporaryPassword')">Slett</button></span><input v-model="credentialForm.temporaryPassword" :disabled="!active" /></label><div class="sensitive-actions"><button v-if="active" class="button button--dark" @click="saveCredentials">Lagre midlertidig</button><button v-if="credentials.length" class="text-button danger" @click="clearCredentials">Slett alt</button></div></section>
+        <section class="card section-card sensitive">
+          <div class="section-heading"><div><p class="eyebrow">Midlertidig</p><h2>Sensitiv informasjon</h2></div><span>ⓘ</span></div>
+          <p class="sensitive-note">Hvert felt utløper 24 timer etter siste lagring. Ikke skriv dette i kommentarer.</p>
+          <button v-if="!exposure.loaded" class="button button--dark" :disabled="exposure.busy" @click="revealCredentials">Åpne midlertidige felt</button>
+          <template v-else>
+            <div class="sensitive-actions"><button class="text-button" @click="exposure.showValues = !exposure.showValues">{{ exposure.showValues ? 'Masker verdier' : 'Vis verdier' }}</button><button class="text-button" @click="clearExposure">Skjul og tøm feltene</button></div>
+            <label v-for="field in [{ key: 'account', label: accountLabel }, { key: 'code', label: codeLabel }, { key: 'simPin', label: 'SIM-PIN' }, { key: 'temporaryPassword', label: 'Midlertidig passord' }]" :key="field.key">
+              <span class="sensitive-label">{{ field.label }}<button v-if="credentialExists(field.key)" class="text-button danger" :disabled="exposure.busy" @click.prevent="clearCredential(field.key)">Slett</button></span>
+              <input v-model="credentialForm[field.key]" :type="exposure.showValues ? 'text' : 'password'" autocomplete="off" autocapitalize="off" :spellcheck="false" maxlength="1024" :disabled="!active || exposure.busy" />
+            </label>
+            <div class="sensitive-actions"><button v-if="active" class="button button--dark" :disabled="exposure.busy" @click="saveCredentials">Lagre midlertidig</button><button v-if="credentials.length" class="text-button danger" :disabled="exposure.busy" @click="clearCredentials">Slett alt</button></div>
+          </template>
+        </section>
       </aside>
     </div>
   </template>

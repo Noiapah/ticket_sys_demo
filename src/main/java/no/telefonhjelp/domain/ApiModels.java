@@ -29,8 +29,12 @@ public final class ApiModels {
             long actorId, long version) {}
     public record Bootstrap(List<Employee> employees, Long currentEmployeeId) {}
     public record CustomerMatch(long id, String name, String phoneNormalized, long previousTickets) {}
-    public record TemporaryCredential(String key, String label, String value, Instant expiresAt) {}
-    public record TemporaryValue(String key, String label, String value) {}
+    public record TemporaryCredential(String key, String label, String value, Instant expiresAt) {
+        @Override public String toString() { return "TemporaryCredential[redacted]"; }
+    }
+    public record TemporaryValue(String key, String label, String value) {
+        @Override public String toString() { return "TemporaryValue[redacted]"; }
+    }
     public record TemporaryValues(List<TemporaryValue> values) {}
     public record ReportFilter(LocalDate from, LocalDate to, Long employeeId, String category) {}
     public record ReportSummary(long created, long closed, long open, long urgent, long escalated,

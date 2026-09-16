@@ -14,6 +14,8 @@ import javafx.concurrent.Worker;
 import com.sun.jna.platform.win32.KnownFolders;
 import com.sun.jna.platform.win32.Shell32Util;
 import no.telefonhjelp.config.StoragePaths;
+import no.telefonhjelp.config.DesktopSession;
+import no.telefonhjelp.service.FileAuthorizations;
 import netscape.javascript.JSObject;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -71,12 +73,13 @@ public class PhoneSupportApplication extends Application {
 
     private String logPath() {
         try { return new StoragePaths().root().resolve("telefonhjelp.log").toString(); }
-        catch (IOException exception) { return System.getProperty("java.io.tmpdir") + "/telefonhjelp.log"; }
+        catch (IOException exception) { throw new IllegalStateException("Kunne ikke opprette privat loggmappe.", exception); }
     }
 
     @Override
     public void start(Stage stage) {
         var port = ((WebServerApplicationContext) context).getWebServer().getPort();
+        var origin = "http://127.0.0.1:" + port;
         var webView = new WebView();
         webView.setContextMenuEnabled(false);
         webView.getEngine().setConfirmHandler(message -> {
@@ -88,15 +91,8 @@ public class PhoneSupportApplication extends Application {
             dialog.setHeaderText(null);
             return dialog.showAndWait().orElse(cancel) == confirm;
         });
-        desktopBridge = new DesktopBridge(stage);
-        webView.getEngine().getLoadWorker().stateProperty().addListener((observable, oldState, state) -> {
-            if (state == Worker.State.SUCCEEDED) {
-                var window = (JSObject) webView.getEngine().executeScript("window");
-                window.setMember("desktop", desktopBridge);
-                webView.getEngine().executeScript("window.dispatchEvent(new Event('desktop-ready'))");
-            }
-        });
-        webView.getEngine().load("http://127.0.0.1:" + port + "/");
+        desktopBridge = connectDesktop(webView, stage, origin, context.getBean(DesktopSession.class), context.getBean(FileAuthorizations.class));
+        webView.getEngine().load(origin + "/");
         stage.setTitle("Telefonhjelp");
         stage.setMinWidth(800);
         stage.setMinHeight(560);
@@ -114,6 +110,38 @@ public class PhoneSupportApplication extends Application {
         stage.show();
         stage.setMaximized(true);
         fitContent.run();
+    }
+
+    static DesktopBridge connectDesktop(WebView webView, Stage stage, String origin, DesktopSession session, FileAuthorizations authorizations) {
+        webView.getEngine().setCreatePopupHandler(features -> null);
+        webView.getEngine().locationProperty().addListener((observable, oldLocation, newLocation) -> {
+            if (!DesktopSession.trustedPage(newLocation, origin)) {
+                webView.getEngine().getLoadWorker().cancel();
+                Platform.runLater(() -> webView.getEngine().load(origin + "/"));
+            }
+        });
+        var bridge = new DesktopBridge(stage, authorizations,
+                () -> DesktopSession.trustedPage(webView.getEngine().getLocation(), origin)
+                        && DesktopSession.trustedPage(String.valueOf(webView.getEngine().executeScript("window.location.href")), origin));
+        // Vue's hash-history initialization can leave WebKit's load worker RUNNING.
+        // Bootstrap when the trusted document's module is ready, independently of that state.
+        var bootstrap = new javafx.animation.Timeline();
+        bootstrap.setCycleCount(400);
+        bootstrap.getKeyFrames().add(new javafx.animation.KeyFrame(javafx.util.Duration.millis(50), event -> {
+            if (!DesktopSession.trustedPage(webView.getEngine().getLocation(), origin)) return;
+            var documentLocation = String.valueOf(webView.getEngine().executeScript("window.location.href"));
+            if (!DesktopSession.trustedPage(documentLocation, origin)
+                    || !Boolean.TRUE.equals(webView.getEngine().executeScript("document.readyState !== 'loading' && typeof window.acceptDesktopSession === 'function'"))) return;
+            var window = (JSObject) webView.getEngine().executeScript("window");
+            window.setMember("desktop", bridge);
+            bootstrap.stop();
+            window.call("acceptDesktopSession", session.credential());
+        }));
+        webView.getEngine().getLoadWorker().stateProperty().addListener((observable, oldState, state) -> {
+            if (state == Worker.State.SCHEDULED) bootstrap.playFromStart();
+            if (state == Worker.State.CANCELLED || state == Worker.State.FAILED) bootstrap.stop();
+        });
+        return bridge;
     }
 
     @Override
@@ -139,29 +167,51 @@ public class PhoneSupportApplication extends Application {
 
     public static final class DesktopBridge {
         private final Stage owner;
-        DesktopBridge(Stage owner) { this.owner = owner; }
-
-        public String chooseBackupPath() {
-            var chooser = databaseChooser("Lagre sikkerhetskopi");
-            chooser.setInitialFileName("telefonhjelp-" + LocalDate.now() + ".db");
-            var selected = chooser.showSaveDialog(owner);
-            return selected == null ? "" : selected.getAbsolutePath();
+        private final FileAuthorizations authorizations;
+        private final java.util.function.BooleanSupplier trusted;
+        DesktopBridge(Stage owner, FileAuthorizations authorizations, java.util.function.BooleanSupplier trusted) {
+            this.owner = owner; this.authorizations = authorizations; this.trusted = trusted;
         }
 
-        public String chooseRestorePath() {
-            var selected = databaseChooser("Velg sikkerhetskopi").showOpenDialog(owner);
-            return selected == null ? "" : selected.getAbsolutePath();
+        private void requireTrusted() { if (!trusted.getAsBoolean()) throw new SecurityException("Siden er ikke tillatt."); }
+
+        public String chooseBackupPath() throws Exception {
+            requireTrusted();
+            var chooser = databaseChooser("Lagre sikkerhetskopi");
+            chooser.setInitialFileName("telefonhjelp-" + LocalDate.now() + ".thbackup");
+            var selected = chooser.showSaveDialog(owner);
+            if (selected == null) return "";
+            var overwrite = selected.exists();
+            if (overwrite && !confirm("Erstatt den valgte filen? Eksisterende innhold blir slettet.")) return "";
+            var password = password(true);
+            if (password == null) return "";
+            try { requireTrusted(); return authorizations.issue(selected.toPath(), FileAuthorizations.Operation.BACKUP, overwrite, password); }
+            finally { java.util.Arrays.fill(password, '\0'); }
+        }
+
+        public String chooseRestorePath() throws Exception {
+            requireTrusted();
+            var chooser = databaseChooser("Velg sikkerhetskopi");
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Eldre sikkerhetskopi (*.db)", "*.db"));
+            var selected = chooser.showOpenDialog(owner);
+            if (selected == null || !confirm("Gjenoppretting erstatter alle vanlige data og sletter midlertidig informasjon. Fortsette?")) return "";
+            var password = selected.getName().endsWith(".thbackup") ? password(false) : new char[0];
+            if (password == null) return "";
+            try { requireTrusted(); return authorizations.issue(selected.toPath(), FileAuthorizations.Operation.RESTORE, false, password); }
+            finally { java.util.Arrays.fill(password, '\0'); }
         }
 
         public String saveDownload(String fileName, String base64Data) throws IOException {
+            requireTrusted();
+            if (fileName == null || fileName.length() > 120 || base64Data == null || base64Data.length() > 24_000_000) throw new IOException("Rapporten er for stor.");
             var safeName = Path.of(fileName).getFileName().toString();
             if (!safeName.toLowerCase(Locale.ROOT).endsWith(".xlsx")) throw new IOException("Rapporten må være en Excel-fil.");
-            var downloads = downloadsDirectory();
+            var downloads = no.telefonhjelp.config.PrivateFiles.localPath(downloadsDirectory());
             Files.createDirectories(downloads);
             var extensionIndex = safeName.length() - ".xlsx".length();
             var baseName = safeName.substring(0, extensionIndex);
             var content = Base64.getDecoder().decode(base64Data);
-            for (var copy = 0; ; copy++) {
+            for (var copy = 0; copy < 1000; copy++) {
                 var candidateName = copy == 0 ? safeName : baseName + " (" + copy + ").xlsx";
                 var destination = downloads.resolve(candidateName);
                 try {
@@ -169,9 +219,33 @@ public class PhoneSupportApplication extends Application {
                     return destination.toString();
                 } catch (FileAlreadyExistsException ignored) { }
             }
+            throw new IOException("For mange rapportfiler med samme navn.");
         }
 
-        public void exitApplication() { Platform.runLater(Platform::exit); }
+        public void exitApplication() { requireTrusted(); Platform.runLater(Platform::exit); }
+
+        private boolean confirm(String message) {
+            var dialog = new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL);
+            dialog.initOwner(owner); dialog.setHeaderText(null);
+            return dialog.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        }
+
+        private char[] password(boolean creating) {
+            var dialog = new javafx.scene.control.Dialog<char[]>();
+            dialog.initOwner(owner); dialog.setTitle(creating ? "Beskytt sikkerhetskopien" : "Åpne sikkerhetskopien");
+            var password = new javafx.scene.control.PasswordField();
+            var repeated = new javafx.scene.control.PasswordField();
+            var fields = new javafx.scene.layout.VBox(10, new javafx.scene.control.Label(creating ? "Passord (minst 12 tegn). Oppbevar det trygt; det kan ikke gjenopprettes." : "Passord for sikkerhetskopien"), password);
+            if (creating) fields.getChildren().addAll(new javafx.scene.control.Label("Gjenta passordet"), repeated);
+            dialog.getDialogPane().setContent(fields);
+            dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+            var okay = dialog.getDialogPane().lookupButton(ButtonType.OK);
+            okay.disableProperty().bind(javafx.beans.binding.Bindings.createBooleanBinding(
+                    () -> password.getLength() < (creating ? 12 : 1) || password.getLength() > 256 || (creating && !password.getText().equals(repeated.getText())), password.textProperty(), repeated.textProperty()));
+            dialog.setResultConverter(button -> button == ButtonType.OK ? password.getText().toCharArray() : null);
+            var result = dialog.showAndWait().orElse(null); password.clear(); repeated.clear();
+            return result;
+        }
 
         private Path downloadsDirectory() {
             try { return Path.of(Shell32Util.getKnownFolderPath(KnownFolders.FOLDERID_Downloads)); }
@@ -181,7 +255,7 @@ public class PhoneSupportApplication extends Application {
         private FileChooser databaseChooser(String title) {
             var chooser = new FileChooser();
             chooser.setTitle(title);
-            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Telefonhjelp-sikkerhetskopi (*.db)", "*.db"));
+            chooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Kryptert sikkerhetskopi (*.thbackup)", "*.thbackup"));
             return chooser;
         }
     }

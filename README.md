@@ -72,7 +72,7 @@ Utviklingsmodusen og skrivebordsdatabasen inneholder et representativt datasett 
 
 ## Windows-pakking
 
-Bygg installasjonsprogrammet med `.\scripts\package.ps1`. Det krever WiX 3 (`candle.exe` og `light.exe`) på `PATH`; resultatet legges i `releases`. Skriptet kjører Java-testene med mindre `-SkipTests` er angitt. En appmappe med runtime kan bygges med `.\scripts\package.ps1 -Type app-image`; den legges i `target/jpackage`.
+Bygg installasjonsprogrammet med `.\scripts\package.ps1`. Det krever WiX 3 (`candle.exe` og `light.exe`) på `PATH`; resultatet legges i `releases`. Skriptet kjører Java-testene, frontend-testene og kontrollene av byggkommandoer med mindre `-SkipTests` er angitt. En appmappe med runtime kan bygges med `.\scripts\package.ps1 -Type app-image`; den legges i `target/jpackage`.
 
 På denne arbeidskopien finnes et lokalt verktøysett som kan brukes slik:
 
@@ -92,6 +92,10 @@ $env:Path = "$env:JAVA_HOME\bin;$nodeTools;$wixTools;" + $env:Path
 
 ## Data og personvern
 
-Vanlige data ligger i `%LOCALAPPDATA%\PhoneSupport\app.db`. Midlertidige koder og passord ligger separat i `secrets.db`, er kryptert med Windows DPAPI og slettes feltvis 24 timer etter siste lagring. De tas aldri med i historikk, logger, søk, rapporter, Excel eller sikkerhetskopier.
+Vanlige data ligger i `%LOCALAPPDATA%\PhoneSupport\app.db` med private filrettigheter. Midlertidige koder og passord ligger separat i `secrets.db`, er kryptert med Windows DPAPI og utløper feltvis 24 timer etter siste lagring. Opprydding skjer mens programmet kjører. De tas aldri med i historikk, logger, søk, rapporter, Excel eller sikkerhetskopier. Feltene hentes bare når de åpnes eksplisitt og er maskert som standard.
 
-Ved en databaseoppgradering opprettes en automatisk kopi før Flyway migrerer. Manuell sikkerhetskopiering og gjenoppretting bruker Windows-filvelgeren. En gjenoppretting valideres først, aktiveres atomisk ved omstart og sletter alle midlertidige verdier.
+Ved en databaseoppgradering opprettes en konsistent kopi før Flyway migrerer. Manuelle sikkerhetskopier bruker `.thbackup` og krypteres med et passord fra Windows-dialogen. Gjenoppretting krever samme passord, validerer hele databaseskjemaet og aktiveres atomisk ved omstart etter at midlertidige verdier er fjernet. Maksimal størrelse er 64 MiB. Eldre `.db`-kopier med gjeldende skjema støttes fortsatt.
+
+API-et krever en privat nøkkel som opprettes ved hver programstart; det kan ikke lenger brukes direkte fra en vanlig nettleser. `npm run dev` bruker fortsatt minnedata uten nøkkel. Ansattvalg er fortsatt registrering av hvem som er valgt, ikke personlig innlogging.
+
+Se [SECURITY.md](SECURITY.md) for sikkerhetsgrenser, oppbevaringspolicy, diskbeskyttelse, avhengighetskontroller og signering. `scripts/security-check.ps1` kjører bygg, tester og avhengighetskontroller. `scripts/package.ps1 -Release` krever et ferdig konfigurert signeringssertifikat og tidsstempeltjeneste.

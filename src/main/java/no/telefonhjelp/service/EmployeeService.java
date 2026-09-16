@@ -31,6 +31,7 @@ public class EmployeeService {
 
     @Transactional
     public Employee create(String name) {
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM employees", Long.class) >= 1000) throw AppException.badRequest("Maksimalt 1000 ansatte er tillatt.");
         var clean = required(name, "Navn er påkrevd.");
         var key = new GeneratedKeyHolder();
         try {
@@ -66,8 +67,8 @@ public class EmployeeService {
     }
 
     private static String required(String value, String message) {
+        InputLimits.text(value, 120);
         if (value == null || value.isBlank()) throw AppException.badRequest(message);
         return value.trim();
     }
 }
-

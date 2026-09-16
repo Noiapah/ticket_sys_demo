@@ -3,6 +3,7 @@
 declare const __APP_VERSION__: string
 
 interface Window {
+  acceptDesktopSession?: (token: string) => void
   desktop?: {
     chooseBackupPath(): string
     chooseRestorePath(): string

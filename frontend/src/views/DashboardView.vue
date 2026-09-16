@@ -13,6 +13,9 @@ const query = ref('')
 const tickets = ref<Ticket[]>([])
 const loading = ref(true)
 const error = ref('')
+const page = ref(0)
+const pageSize = 50
+let requestGeneration = 0
 const now = ref(new Date())
 let timer: number
 let searchTimer: number
@@ -20,14 +23,17 @@ let searchTimer: number
 const sorted = computed(() => [...tickets.value].sort((a, b) => Number(b.urgent) - Number(a.urgent) || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()))
 
 async function load() {
+  const generation = ++requestGeneration
   loading.value = true; error.value = ''
-  try { tickets.value = await gateway.listTickets({ scope: tab.value, query: query.value }) }
+  try { const values = await gateway.listTickets({ scope: tab.value, query: query.value, page: page.value, size: pageSize }); if (generation === requestGeneration) tickets.value = values }
   catch (cause) { error.value = cause instanceof Error ? cause.message : 'Kunne ikke hente saker.' }
-  finally { loading.value = false }
+  finally { if (generation === requestGeneration) loading.value = false }
 }
 
-watch(tab, load)
-watch(query, () => { window.clearTimeout(searchTimer); searchTimer = window.setTimeout(load, 180) })
+watch(page, load)
+const reset = () => { if (page.value === 0) void load(); else page.value = 0 }
+watch(tab, reset)
+watch(query, () => { window.clearTimeout(searchTimer); searchTimer = window.setTimeout(reset, 180) })
 onMounted(() => { load(); timer = window.setInterval(() => now.value = new Date(), 60_000) })
 onBeforeUnmount(() => { window.clearInterval(timer); window.clearTimeout(searchTimer) })
 </script>
@@ -43,7 +49,7 @@ onBeforeUnmount(() => { window.clearInterval(timer); window.clearTimeout(searchT
       <button :class="{ active: tab === 'active' }" @click="tab = 'active'">Aktive saker</button>
       <button :class="{ active: tab === 'closed' }" @click="tab = 'closed'">Tidligere saker</button>
     </div>
-    <label class="search"><span aria-hidden="true">⌕</span><input v-model="query" placeholder="Søk på telefon, navn, saksnummer, enhet eller problem…" aria-label="Søk i saker" /></label>
+    <label class="search"><span aria-hidden="true">⌕</span><input v-model="query" maxlength="200" placeholder="Søk på telefon, navn, saksnummer, enhet eller problem…" aria-label="Søk i saker" /></label>
   </section>
 
   <div v-if="error" class="alert alert--error">{{ error }}</div>
@@ -63,5 +69,5 @@ onBeforeUnmount(() => { window.clearInterval(timer); window.clearTimeout(searchT
       </tbody>
     </table>
   </div>
+  <nav class="sensitive-actions" aria-label="Sider med saker"><button class="button" :disabled="loading || page === 0" @click="page--">Forrige</button><span>Side {{ page + 1 }}</span><button class="button" :disabled="loading || tickets.length < pageSize" @click="page++">Neste</button></nav>
 </template>
-

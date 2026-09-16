@@ -19,10 +19,14 @@ public final class StoragePaths {
     public StoragePaths(@Value("${phone.support.data-dir:}") String configuredPath) throws IOException {
         var override = configuredPath == null || configuredPath.isBlank() ? System.getProperty("phone.support.data-dir") : configuredPath;
         var local = System.getenv("LOCALAPPDATA");
-        this.root = override != null ? Path.of(override) : Path.of(local != null ? local : System.getProperty("user.home"), "PhoneSupport");
+        this.root = (override != null && !override.isBlank() ? Path.of(override) : Path.of(local != null ? local : System.getProperty("user.home"), "PhoneSupport")).toAbsolutePath().normalize();
+        PrivateFiles.localPath(root);
         Files.createDirectories(root);
+        PrivateFiles.restrict(root);
         Files.createDirectories(backups());
-        applyPendingRestore();
+        try (var files = Files.walk(root)) {
+            for (var file : files.toList()) { PrivateFiles.localPath(file); PrivateFiles.restrict(file); }
+        }
     }
 
     public StoragePaths() throws IOException { this(System.getProperty("phone.support.data-dir", "")); }
@@ -34,25 +38,31 @@ public final class StoragePaths {
     public Path backups() { return root.resolve("backups"); }
     public Path pendingRestore() { return root.resolve("restore.pending"); }
 
-    private void applyPendingRestore() throws IOException {
+    public void applyPendingRestore() throws Exception {
         var pending = pendingRestore();
-        if (!Files.isRegularFile(pending)) return;
+        if (!Files.exists(pending, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return;
+        PrivateFiles.localPath(pending);
+        RestoreValidator.validate(pending, root);
         var database = database();
         if (Files.isRegularFile(database) && Files.size(database) > 0) {
             var stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"));
-            Files.copy(database, backups().resolve("pre-restore-" + stamp + ".db"), StandardCopyOption.COPY_ATTRIBUTES);
+            snapshot(database, backups().resolve("pre-restore-" + stamp + "-" + java.util.UUID.randomUUID() + ".db"));
         }
+        SecretDatabase.erase(this);
+        // Old sidecars must never be replayed against the replacement database.
+        for (var suffix : new String[]{"-wal", "-shm", "-journal"}) Files.deleteIfExists(root.resolve("app.db" + suffix));
         moveReplacing(pending, database);
-        Files.deleteIfExists(secretsDatabase());
-        Files.deleteIfExists(root.resolve("secrets.db-wal"));
-        Files.deleteIfExists(root.resolve("secrets.db-shm"));
+        PrivateFiles.restrict(database);
     }
 
     private static void moveReplacing(Path source, Path target) throws IOException {
-        try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
+        Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    public static void snapshot(Path source, Path target) throws Exception {
+        try (var connection = java.sql.DriverManager.getConnection("jdbc:sqlite:" + source); var statement = connection.prepareStatement("VACUUM INTO ?")) {
+            statement.setString(1, target.toString()); statement.execute();
         }
+        PrivateFiles.restrict(target);
     }
 }

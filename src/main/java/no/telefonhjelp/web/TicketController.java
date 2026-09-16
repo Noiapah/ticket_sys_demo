@@ -14,7 +14,7 @@ public class TicketController {
     private final TicketService service;
     public TicketController(TicketService service) { this.service = service; }
 
-    @GetMapping List<Ticket> list(@RequestParam(defaultValue = "all") String scope, @RequestParam(required = false) String query, @RequestParam(required = false) Long employeeId, @RequestParam(required = false) String category, @RequestParam(required = false) LocalDate from, @RequestParam(required = false) LocalDate to) { return service.list(scope, query, employeeId, category, from, to); }
+    @GetMapping List<Ticket> list(@RequestParam(defaultValue = "all") String scope, @RequestParam(required = false) String query, @RequestParam(required = false) Long employeeId, @RequestParam(required = false) String category, @RequestParam(required = false) LocalDate from, @RequestParam(required = false) LocalDate to, @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "50") int size) { return service.list(scope, query, employeeId, category, from, to, page, size); }
     @GetMapping("/{id}") Ticket get(@PathVariable long id) { return service.get(id); }
     @PostMapping @ResponseStatus(HttpStatus.CREATED) Ticket create(@RequestBody TicketDraft draft) { return service.create(draft); }
     @PatchMapping("/{id}") Ticket update(@PathVariable long id, @RequestBody TicketPatch patch) { return service.update(id, patch); }

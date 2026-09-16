@@ -3,6 +3,6 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './styles/main.scss'
+import { waitForDesktop } from './gateway/desktopSession'
 
-createApp(App).use(createPinia()).use(router).mount('#app')
-
+void waitForDesktop().then(() => createApp(App).use(createPinia()).use(router).mount('#app'))

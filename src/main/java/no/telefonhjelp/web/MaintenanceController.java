@@ -9,12 +9,12 @@ import org.springframework.web.bind.annotation.*;
 public class MaintenanceController {
     private final MaintenanceService service;
     public MaintenanceController(MaintenanceService service){this.service=service;}
-    @PostMapping("/backup") Message backup(@RequestBody(required=false) FileRequest request) throws Exception { return new Message(service.backup(request == null ? null : request.path()), false); }
+    @PostMapping("/backup") Message backup(@RequestBody FileRequest request) throws Exception { return new Message(service.backup(request.authorization()), false); }
     @PostMapping("/restore") Message restore(@RequestBody FileRequest request) throws Exception {
-        var message = service.prepareRestore(request.path());
+        var message = service.prepareRestore(request.authorization());
         var restarting = PhoneSupportApplication.requestRestart();
         return new Message(message, restarting);
     }
-    record FileRequest(String path) {}
+    record FileRequest(String authorization) {}
     record Message(String message, boolean restarting) {}
 }

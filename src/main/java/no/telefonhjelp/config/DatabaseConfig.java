@@ -19,12 +19,16 @@ public class DatabaseConfig {
     Clock clock() { return Clock.systemUTC(); }
 
     @Bean
-    DataSource dataSource(StoragePaths paths) {
+    DataSource dataSource(StoragePaths paths) throws Exception {
+        paths.applyPendingRestore();
         var config = new HikariConfig();
         config.setJdbcUrl("jdbc:sqlite:" + paths.database().toAbsolutePath());
         config.setDriverClassName("org.sqlite.JDBC");
         config.setMaximumPoolSize(1);
-        config.setConnectionInitSql("PRAGMA foreign_keys=ON");
+        var sqlite = new org.sqlite.SQLiteConfig();
+        sqlite.enforceForeignKeys(true);
+        config.setDataSourceProperties(sqlite.toProperties());
+        config.setConnectionInitSql("PRAGMA trusted_schema=OFF");
         return new HikariDataSource(config);
     }
 
@@ -33,7 +37,7 @@ public class DatabaseConfig {
         var flyway = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load();
         if (Files.exists(paths.database()) && Files.size(paths.database()) > 0 && flyway.info().pending().length > 0) {
             var name = "pre-migration-" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")) + ".db";
-            Files.copy(paths.database(), paths.backups().resolve(name), StandardCopyOption.COPY_ATTRIBUTES);
+            StoragePaths.snapshot(paths.database(), paths.backups().resolve(name));
         }
         flyway.migrate();
         return flyway;

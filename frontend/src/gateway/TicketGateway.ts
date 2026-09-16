@@ -1,6 +1,8 @@
 import type { CustomerMatch, Employee, ReportFilter, ReportSummary, TemporaryCredential, Ticket, TicketDraft, TicketPatch, TicketStatus } from '../domain/types'
 
 export interface TicketQuery {
+  page?: number
+  size?: number
   scope?: 'active' | 'closed' | 'all'
   query?: string
   employeeId?: number
@@ -29,6 +31,6 @@ export interface TicketGateway {
   clearTemporaryInfo(ticketId: number, key?: string): Promise<void>
   reportSummary(filter: ReportFilter): Promise<ReportSummary>
   exportReport(filter: ReportFilter): Promise<Blob>
-  backup(destination?: string): Promise<string>
-  restore(source: string): Promise<{ message: string; restarting: boolean }>
+  backup(authorization?: string): Promise<string>
+  restore(authorization: string): Promise<{ message: string; restarting: boolean }>
 }

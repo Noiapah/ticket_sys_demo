@@ -45,7 +45,11 @@ public class ReportService {
     private static final Locale NORWEGIAN = Locale.forLanguageTag("nb-NO");
     private final JdbcTemplate jdbc;
 
-    public ReportService(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+    public ReportService(JdbcTemplate jdbc) {
+        this.jdbc = new JdbcTemplate(java.util.Objects.requireNonNull(jdbc.getDataSource()));
+        this.jdbc.setMaxRows(10_001);
+        this.jdbc.setQueryTimeout(10);
+    }
 
     public ReportSummary summary(ReportFilter filter) { return summarize(loadData(filter)); }
 
@@ -69,6 +73,8 @@ public class ReportService {
 
     private ReportData loadData(ReportFilter filter) {
         var range = range(filter);
+        var count = jdbc.queryForObject("SELECT COUNT(*) FROM (SELECT id FROM tickets WHERE (created_at>=? AND created_at<?) OR (closed_at>=? AND closed_at<?) LIMIT 10001)", Long.class, range.from(), range.to(), range.from(), range.to());
+        if (count != null && count > 10_000) throw AppException.badRequest("Rapporten omfatter for mange saker. Velg en kortere periode.");
         var ticketArgs = new ArrayList<Object>();
         ticketArgs.add(range.from()); ticketArgs.add(range.to());
         var ticketWhere = filters(filter, range, ticketArgs, "eh");
@@ -446,7 +452,10 @@ public class ReportService {
     private static String statusLabel(String value) { return switch (value) { case "IN_PROGRESS" -> "Pågår"; case "WAITING" -> "Venter"; case "ESCALATED" -> "Eskalert"; case "CLOSED" -> "Lukket"; default -> value; }; }
     private static String deviceLabel(String value) { return switch (value) { case "PHONE" -> "Telefon"; case "TABLET" -> "Nettbrett"; case "SMARTWATCH" -> "Smartklokke"; case "COMPUTER" -> "Datamaskin"; case "OTHER" -> "Annet"; default -> value; }; }
     private static String operatingSystemLabel(String value) { return switch (value) { case "IOS" -> "iOS"; case "ANDROID" -> "Android"; case "OTHER" -> "Annet"; default -> value; }; }
-    private static Range range(ReportFilter filter) { return new Range(filter.from().atStartOfDay(REPORT_ZONE).toInstant().toString(), filter.to().plusDays(1).atStartOfDay(REPORT_ZONE).toInstant().toString()); }
+    private static Range range(ReportFilter filter) {
+        InputLimits.dates(filter.from(), filter.to(), true); InputLimits.text(filter.category(), 120);
+        return new Range(filter.from().atStartOfDay(REPORT_ZONE).toInstant().toString(), filter.to().plusDays(1).atStartOfDay(REPORT_ZONE).toInstant().toString());
+    }
 
     private record Range(String from, String to) {}
     private record ReportRow(String status, boolean urgent, Instant createdAt, boolean escalated) {}

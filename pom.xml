@@ -9,12 +9,17 @@
   <properties>
     <java.version>25</java.version>
     <spring-boot.version>4.1.1</spring-boot.version>
-    <javafx.version>25.0.1</javafx.version>
+    <javafx.version>25.0.4</javafx.version>
+    <tomcat.version>11.0.25</tomcat.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <!-- Pin the patched Tomcat line until the imported Boot BOM catches up. -->
+      <dependency><groupId>org.apache.tomcat.embed</groupId><artifactId>tomcat-embed-core</artifactId><version>${tomcat.version}</version></dependency>
+      <dependency><groupId>org.apache.tomcat.embed</groupId><artifactId>tomcat-embed-el</artifactId><version>${tomcat.version}</version></dependency>
+      <dependency><groupId>org.apache.tomcat.embed</groupId><artifactId>tomcat-embed-websocket</artifactId><version>${tomcat.version}</version></dependency>
       <dependency>
         <groupId>org.springframework.boot</groupId><artifactId>spring-boot-dependencies</artifactId><version>${spring-boot.version}</version><type>pom</type><scope>import</scope>
       </dependency>
@@ -49,6 +54,26 @@
       </plugin>
       <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.4</version><configuration><useModulePath>false</useModulePath></configuration></plugin>
       <plugin><groupId>org.openjfx</groupId><artifactId>javafx-maven-plugin</artifactId><version>0.0.8</version><configuration><mainClass>no.telefonhjelp.DesktopLauncher</mainClass></configuration></plugin>
+      <plugin>
+        <groupId>org.cyclonedx</groupId><artifactId>cyclonedx-maven-plugin</artifactId><version>2.9.2</version>
+        <executions><execution><phase>package</phase><goals><goal>makeAggregateBom</goal></goals></execution></executions>
+        <configuration><outputName>sbom-java</outputName><outputFormat>json</outputFormat><includeTestScope>true</includeTestScope></configuration>
+      </plugin>
     </plugins>
   </build>
+  <profiles>
+    <profile>
+      <id>security-audit</id>
+      <build><plugins><plugin>
+        <groupId>org.owasp</groupId><artifactId>dependency-check-maven</artifactId><version>13.0.0</version>
+        <configuration>
+          <failBuildOnCVSS>7</failBuildOnCVSS><failOnError>true</failOnError>
+          <nvdApiKeyEnvironmentVariable>NVD_API_KEY</nvdApiKeyEnvironmentVariable>
+          <formats><format>HTML</format><format>JSON</format></formats>
+          <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
+        </configuration>
+        <executions><execution><phase>verify</phase><goals><goal>check</goal></goals></execution></executions>
+      </plugin></plugins></build>
+    </profile>
+  </profiles>
 </project>

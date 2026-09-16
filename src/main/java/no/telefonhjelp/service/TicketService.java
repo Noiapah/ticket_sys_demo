@@ -24,6 +24,12 @@ public class TicketService {
     public TicketService(JdbcTemplate jdbc, EmployeeService employees, Flyway flyway) { this.jdbc = jdbc; this.employees = employees; }
 
     public List<Ticket> list(String scope, String query, Long employeeId, String category, LocalDate from, LocalDate to) {
+        return list(scope, query, employeeId, category, from, to, 0, 50);
+    }
+
+    public List<Ticket> list(String scope, String query, Long employeeId, String category, LocalDate from, LocalDate to, int page, int size) {
+        if (page < 0 || page > 10_000 || size < 1 || size > 100 || !Set.of("all", "active", "closed").contains(scope)) throw AppException.badRequest("Ugyldig side eller filter.");
+        InputLimits.text(query, 200); InputLimits.text(category, 120); InputLimits.dates(from, to, false);
         var sql = new StringBuilder(BASE_SQL + " WHERE 1=1");
         var args = new ArrayList<>();
         if ("active".equals(scope)) sql.append(" AND t.status<>'CLOSED'");
@@ -39,8 +45,9 @@ public class TicketService {
             sql.append(" AND (CAST(t.id AS TEXT) LIKE ? OR lower(c.name) LIKE ? OR lower(c.phone_display) LIKE ? OR c.phone_normalized LIKE ? OR lower(t.device_model) LIKE ? OR lower(t.new_device_model) LIKE ? OR lower(t.description) LIKE ?)");
             args.addAll(List.of(needle, needle, needle, phone, needle, needle, needle));
         }
-        sql.append(" ORDER BY t.urgent DESC, t.created_at ASC");
-        return jdbc.query(sql.toString(), this::mapTicketWithoutChildren, args.toArray()).stream().map(this::withChildren).toList();
+        sql.append(" ORDER BY t.urgent DESC, t.created_at ASC, t.id ASC LIMIT ? OFFSET ?");
+        args.add(size); args.add(page * size);
+        return jdbc.query(sql.toString(), this::mapTicketWithoutChildren, args.toArray());
     }
 
     public Ticket get(long id) {
@@ -51,6 +58,8 @@ public class TicketService {
 
     @Transactional
     public Ticket create(TicketDraft draft) {
+        if (draft.deviceType() == null || draft.operatingSystem() == null) throw AppException.badRequest("Velg enhetstype og operativsystem.");
+        InputLimits.text(draft.manufacturer(), 120); InputLimits.text(draft.newDeviceModel(), 200);
         var actor = employees.require(draft.actorId(), true);
         validateDraft(draft.customerName(), draft.customerPhone(), draft.deviceModel(), draft.category(), draft.description());
         var now = Instant.now().toString();
@@ -69,6 +78,7 @@ public class TicketService {
 
     @Transactional
     public Ticket update(long id, TicketPatch patch) {
+        InputLimits.text(patch.manufacturer(), 120); InputLimits.text(patch.newDeviceModel(), 200);
         var current = writable(id, patch.version());
         var actor = employees.require(patch.actorId(), true);
         var customerName = choose(patch.customerName(), current.customerName());
@@ -99,6 +109,7 @@ public class TicketService {
 
     @Transactional
     public Ticket comment(long id, String text, long actorId, long version) {
+        InputLimits.text(text, 4000);
         var current = writable(id, version); var actor = employees.require(actorId, true); var value = choose(text, "");
         if (value.isBlank()) throw AppException.badRequest("Kommentaren kan ikke være tom.");
         var now = Instant.now().toString();
@@ -116,6 +127,7 @@ public class TicketService {
 
     @Transactional
     public Ticket status(long id, TicketStatus status, long actorId, long version) {
+        if (status == null) throw AppException.badRequest("Velg en status.");
         var current = get(id); var actor = employees.require(actorId, true);
         if (current.version() != version) throw AppException.conflict("Saken er endret. Last den inn på nytt.");
         if (current.status() == TicketStatus.CLOSED && status != TicketStatus.IN_PROGRESS) throw AppException.badRequest("En lukket sak kan bare åpnes igjen.");
@@ -153,7 +165,10 @@ public class TicketService {
     private void touch(long id, long version, String now) { updateVersioned("UPDATE tickets SET updated_at=?,version=version+1 WHERE id=? AND version=?", now, id, version); }
     private void updateVersioned(String sql, Object... args) { if (jdbc.update(sql, args) != 1) throw AppException.conflict("Saken er endret. Last den inn på nytt."); }
     private void addHistory(long ticketId, long actorId, String type, String summary, String now) { jdbc.update("INSERT INTO ticket_history(ticket_id,actor_employee_id,event_type,summary,created_at) VALUES (?,?,?,?,?)", ticketId, actorId, type, summary, now); }
-    private static void validateDraft(String name, String phone, String device, String category, String description) { if (Stream.of(name, phone, device, category, description).anyMatch(value -> value == null || value.isBlank())) throw AppException.badRequest("Fyll ut alle obligatoriske felt."); }
+    private static void validateDraft(String name, String phone, String device, String category, String description) {
+        if (Stream.of(name, phone, device, category, description).anyMatch(value -> value == null || value.isBlank())) throw AppException.badRequest("Fyll ut alle obligatoriske felt.");
+        InputLimits.text(name, 200); InputLimits.text(phone, 40); InputLimits.text(device, 200); InputLimits.text(category, 120); InputLimits.text(description, 4000);
+    }
     private static String clean(String value) { return value == null ? "" : value.trim(); }
     private static String choose(String value, String fallback) { return value == null ? fallback : value.trim(); }
     private static String deviceLabel(DeviceType type, String manufacturer, String model, OperatingSystem os) { return Stream.of(type.name(), clean(manufacturer), model, os.name()).filter(value -> !value.isBlank()).reduce((left, right) -> left + " / " + right).orElse(""); }

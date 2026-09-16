@@ -1,8 +1,9 @@
 import type { ReportFilter, TicketDraft, TicketPatch, TicketStatus } from '../domain/types'
 import type { TicketGateway, TicketQuery } from './TicketGateway'
+import { apiFetch } from './desktopSession'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, { ...init, headers: { 'Content-Type': 'application/json', ...init?.headers } })
+  const response = await apiFetch(path, init)
   if (!response.ok) {
     const body = await response.json().catch(() => ({ message: `Feil ${response.status}` }))
     throw new Error(body.message ?? 'En ukjent feil oppstod.')
@@ -21,7 +22,7 @@ export const gateway: TicketGateway = {
   bootstrap: () => request('/bootstrap'),
   setCurrentEmployee: employeeId => request('/settings/current-employee', { method: 'PUT', body: JSON.stringify({ employeeId }) }),
   async matchCustomer(phone) {
-    const response = await fetch(`/api/customers/match?${params({ phone })}`)
+    const response = await apiFetch(`/customers/match?${params({ phone })}`)
     if (response.status === 204) return null
     if (!response.ok) throw new Error('Kunne ikke slå opp kunden.')
     return response.json()
@@ -42,10 +43,10 @@ export const gateway: TicketGateway = {
   clearTemporaryInfo: (ticketId, key) => request(`/tickets/${ticketId}/temporary-info${key ? `/${encodeURIComponent(key)}` : ''}`, { method: 'DELETE' }),
   reportSummary: filter => request(`/reports/summary?${params(filter)}`),
   async exportReport(filter: ReportFilter) {
-    const response = await fetch(`/api/reports/xlsx?${params(filter)}`)
+    const response = await apiFetch(`/reports/xlsx?${params(filter)}`)
     if (!response.ok) throw new Error('Kunne ikke lage Excel-rapporten.')
     return response.blob()
   },
-  backup: async destination => (await request<{ message: string }>('/maintenance/backup', { method: 'POST', body: JSON.stringify({ path: destination }) })).message,
-  restore: source => request('/maintenance/restore', { method: 'POST', body: JSON.stringify({ path: source }) })
+  backup: async authorization => (await request<{ message: string }>('/maintenance/backup', { method: 'POST', body: JSON.stringify({ authorization }) })).message,
+  restore: authorization => request('/maintenance/restore', { method: 'POST', body: JSON.stringify({ authorization }) })
 }

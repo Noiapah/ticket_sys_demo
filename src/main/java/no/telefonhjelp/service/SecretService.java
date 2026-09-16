@@ -3,6 +3,7 @@ package no.telefonhjelp.service;
 import com.sun.jna.platform.win32.Crypt32Util;
 import jakarta.annotation.PostConstruct;
 import no.telefonhjelp.config.StoragePaths;
+import no.telefonhjelp.config.SecretDatabase;
 import no.telefonhjelp.domain.ApiModels.TemporaryCredential;
 import no.telefonhjelp.domain.ApiModels.TemporaryValue;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -24,8 +25,10 @@ public class SecretService {
 
     @PostConstruct
     void initialize() throws Exception {
-        try (var connection = DriverManager.getConnection(url); var statement = connection.createStatement()) {
+        try (var connection = SecretDatabase.open(url); var statement = connection.createStatement()) {
             statement.execute("CREATE TABLE IF NOT EXISTS temporary_credentials(ticket_id INTEGER NOT NULL, credential_key TEXT NOT NULL, label TEXT NOT NULL, encrypted_value BLOB NOT NULL, expires_at TEXT NOT NULL, PRIMARY KEY(ticket_id, credential_key))");
+            // Rebuild existing free pages left by versions that did not enable secure_delete.
+            statement.execute("VACUUM");
         }
         purgeExpired();
     }
@@ -33,7 +36,7 @@ public class SecretService {
     public synchronized List<TemporaryCredential> list(long ticketId) throws Exception {
         purgeExpired();
         var values = new ArrayList<TemporaryCredential>();
-        try (var connection = DriverManager.getConnection(url); var statement = connection.prepareStatement("SELECT credential_key,label,encrypted_value,expires_at FROM temporary_credentials WHERE ticket_id=? ORDER BY credential_key")) {
+        try (var connection = SecretDatabase.open(url); var statement = connection.prepareStatement("SELECT credential_key,label,encrypted_value,expires_at FROM temporary_credentials WHERE ticket_id=? ORDER BY credential_key")) {
             statement.setLong(1, ticketId);
             try (var result = statement.executeQuery()) {
                 while (result.next()) values.add(new TemporaryCredential(result.getString(1), result.getString(2), decrypt(result.getBytes(3)), Instant.parse(result.getString(4))));
@@ -43,8 +46,21 @@ public class SecretService {
     }
 
     public synchronized List<TemporaryCredential> replace(long ticketId, List<TemporaryValue> values) throws Exception {
+        purgeExpired();
+        if (values == null || values.size() > 16) throw AppException.badRequest("Maksimalt 16 midlertidige felt er tillatt.");
+        var keys = new java.util.HashSet<String>();
+        for (var value : values) {
+            if (value == null || !keys.add(safeKey(value.key()))) throw AppException.badRequest("Ugyldige eller dupliserte felt.");
+            safeLabel(value.label());
+            InputLimits.text(value.value(), 1024);
+        }
         var expires = Instant.now(clock).plus(24, ChronoUnit.HOURS).toString();
-        try (var connection = DriverManager.getConnection(url)) {
+        try (var connection = SecretDatabase.open(url)) {
+            try (var count = connection.prepareStatement("SELECT credential_key FROM temporary_credentials WHERE ticket_id=?")) {
+                count.setLong(1, ticketId);
+                try (var result = count.executeQuery()) { while (result.next()) keys.add(result.getString(1)); }
+            }
+            if (keys.size() > 16) throw AppException.badRequest("Maksimalt 16 midlertidige felt er tillatt.");
             connection.setAutoCommit(false);
             try (var insert = connection.prepareStatement("INSERT INTO temporary_credentials(ticket_id,credential_key,label,encrypted_value,expires_at) VALUES (?,?,?,?,?) ON CONFLICT(ticket_id,credential_key) DO UPDATE SET label=excluded.label,encrypted_value=excluded.encrypted_value,expires_at=excluded.expires_at");
                  var delete = connection.prepareStatement("DELETE FROM temporary_credentials WHERE ticket_id=? AND credential_key=?")) {
@@ -66,16 +82,16 @@ public class SecretService {
 
     public synchronized void clear(long ticketId, String key) throws Exception {
         var sql = key == null ? "DELETE FROM temporary_credentials WHERE ticket_id=?" : "DELETE FROM temporary_credentials WHERE ticket_id=? AND credential_key=?";
-        try (var connection = DriverManager.getConnection(url); var statement = connection.prepareStatement(sql)) { statement.setLong(1, ticketId); if (key != null) statement.setString(2, key); statement.executeUpdate(); }
+        try (var connection = SecretDatabase.open(url); var statement = connection.prepareStatement(sql)) { statement.setLong(1, ticketId); if (key != null) statement.setString(2, safeKey(key)); statement.executeUpdate(); }
     }
 
     @Scheduled(fixedDelay = 900_000)
     public synchronized void purgeExpired() throws Exception {
-        try (var connection = DriverManager.getConnection(url); var statement = connection.prepareStatement("DELETE FROM temporary_credentials WHERE expires_at<=?")) { statement.setString(1, Instant.now(clock).toString()); statement.executeUpdate(); }
+        try (var connection = SecretDatabase.open(url); var statement = connection.prepareStatement("DELETE FROM temporary_credentials WHERE expires_at<=?")) { statement.setString(1, Instant.now(clock).toString()); statement.executeUpdate(); }
     }
 
     public synchronized void clearAll() throws Exception {
-        try (var connection = DriverManager.getConnection(url); var statement = connection.createStatement()) { statement.executeUpdate("DELETE FROM temporary_credentials"); }
+        try (var connection = SecretDatabase.open(url); var statement = connection.createStatement()) { statement.executeUpdate("DELETE FROM temporary_credentials"); }
     }
 
     private byte[] encrypt(String value) { return Crypt32Util.cryptProtectData(value.getBytes(StandardCharsets.UTF_8)); }
