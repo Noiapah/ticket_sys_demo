@@ -6,9 +6,31 @@ The native bridge is attached only to the exact application page and hash routes
 
 ## Identity and workstation access
 
-This remains a desktop application for one trusted Windows account; individual employee sign-in is outside the current deployment scope. Employee selection records the selected employee; **it is not individual authentication or reliable proof of who performed an action**. All people who use that Windows account share application privileges. Deployments requiring individual accountability must add employee sign-in, session-derived actors and role-based permissions for administration, secrets, exports and restore before using a shared account. The application credential does not protect against malware, administrators or a fully compromised Windows account.
+This remains a desktop application for one trusted Windows account; individual employee sign-in is outside the current deployment scope. Employee selection records the selected employee; **it is not individual authentication or reliable proof of who performed an action**. Everyone who unlocks with the shared application PIN has the same application privileges. Deployments requiring individual accountability must add employee sign-in, session-derived actors and role-based permissions for administration, secrets, exports and restore before using a shared account. The application credential does not protect against malware, administrators or a fully compromised Windows account.
 
 The application data directory and its existing contents receive an owner-only Windows ACL (or owner-only POSIX permissions on supported test filesystems). Filesystems without private permissions, network paths, junctions and symbolic links are rejected. Use Windows device encryption/BitLocker for the data volume: `app.db` and internal recovery copies remain ordinary SQLite databases. ACLs do not protect a stolen, unencrypted drive. No machine-wide encryption settings are changed by the application.
+
+## Application PIN
+
+Version 1.0.4 adds a shared application PIN, chosen and confirmed in a native window on first launch. PINs contain 6–12 digits, including leading zeroes. The desktop launcher acquires its instance lock, then waits for PIN setup or successful verification before starting Spring, opening the database, or serving HTTP. PIN values never pass through the web page, API, command line or logs. Closing and restarting requires the PIN again; there is no additional idle lock in this version.
+
+Five consecutive failed attempts advance the lockout schedule below. Failed attempts are counted across restarts and waiting periods. Submissions during an active lockout are rejected without changing the count; even the correct PIN is rejected until the wait ends. A successful unlock then resets both the failure count and escalation level.
+
+| Failed attempts without a successful unlock | Lockout |
+| --- | --- |
+| 5 | 1 minute |
+| 10 | 2 minutes |
+| 15 | 5 minutes |
+| 20 | 10 minutes |
+| 25 | 30 minutes |
+| 30 | 60 minutes |
+| 35 | 5 hours |
+| 40 | 24 hours |
+| 45 | Permanent |
+
+Permanent lockout has no time-based reset or PIN-based recovery. There is no default PIN or reset endpoint. The PIN verifier uses PBKDF2-HMAC-SHA256 with a random 32-byte salt and 600,000 iterations. The verifier and counters are protected with Windows user-scoped DPAPI in `pin-access.dat`, with owner-only permissions and atomic writes. Attempts must be saved before their results are accepted. A missing state file after setup (tracked by `pin-access.initialized`) or an unreadable/tampered state fails closed. Neither file is part of a ticket backup or restore, so restoring an older ticket database does not reset the PIN or lockout.
+
+This is an application access gate, not encryption of customer records or protection from an attacker controlling the Windows account. Such an attacker can still access the databases, replace the application or restore/delete authentication state. Timed lockouts use the computer's clock and are not a defense against clock manipulation by a privileged attacker.
 
 ## Backup and restore
 
@@ -21,7 +43,7 @@ The application data directory and its existing contents receive an owner-only W
 
 ## Temporary secrets
 
-Every secret-database connection enables and verifies `secure_delete=ON`, uses a truncating rollback journal with full synchronization, and keeps SQLite temporary storage in memory. Startup runs `VACUUM` to remove free pages left by older versions. Expiry, replacement and manual deletion all use these connections. Expiry is checked at startup/read and every 15 minutes while the application runs.
+Every secret-database connection enables and verifies `secure_delete=ON`, uses a truncating rollback journal with full synchronization, and keeps SQLite temporary storage in memory. Startup runs `VACUUM` to remove free pages left by older versions. Expiry, replacement and manual deletion all use these connections. Expiry is checked when the application services start after PIN entry, on read, and every 15 minutes while those services run. Cleanup does not run while the program is waiting at the PIN screen.
 
 Opening a ticket does not fetch decrypted values. The user opens temporary fields explicitly; values are masked until the separate “Vis verdier” action. The UI clears values at expiry (checked every second and on focus), after five minutes without keyboard/pointer activity, on blur/hidden page, employee change, route change, session rejection and unmount. Late network responses cannot repopulate cleared fields. Secret records redact their string representation to reduce accidental debug logging.
 
@@ -54,3 +76,9 @@ All 30 Java tests and 14 frontend tests passed. Tests cover anonymous API access
 The production frontend, Java package and Windows app image built successfully with the test suites enabled. An unsigned Windows EXE installer was also generated from that image under `target/installer-verification`; it was not installed. Both CycloneDX SBOMs were included in the app image and parsed successfully: 104 Java components (98 distinct Maven package versions, including test dependencies) and 16 frontend runtime components. Refreshed OSV and npm audits returned zero findings. Native-command regression checks passed with output redirected to a log, including stderr separation and rejection of failed or missing commands.
 
 OWASP Dependency-Check could not populate its NVD database without a valid API key and is not counted as a completed scan. Production signing was not tested with a real signing certificate. Existing installed application data and workstation encryption settings were not used or changed during verification; tests used disposable databases. The agreed deployment continues to use Windows-account access and employee selection.
+
+## PIN and ticket reset verification — 17 September 2026
+
+All 36 Java tests and 14 frontend tests passed for version 1.0.4. PIN tests cover all nine lockout stages with a controlled clock, restart persistence after every attempt, correct PIN rejection during a lockout, permanent lock after 45 failures, success resetting the sequence, invalid setup, tampered/missing state and storage failure. The native UI test covers setup confirmation, leading zeroes, failed attempts, countdown and successful unlock. Separate invisible-window startup checks confirmed that the actual application starts no backend or database before PIN entry, and loads the production dashboard after successful entry. The unsigned Windows installer was built at `releases/Telefonhjelp-1.0.4.exe`; it has not been installed automatically. Refreshed OSV and npm audits returned zero findings.
+
+At the operator's explicit request, the existing local database was cleared under its instance lock in a transaction with secure deletion enabled: 141 tickets, 35 comments and 302 history entries were removed. A final read-only check found zero tickets, comments, history entries and temporary credentials, while preserving 71 customers and 9 employees. Existing backup files were not deleted and may retain earlier records. This was a one-time maintenance operation, not a destructive application migration; existing installations do not re-run the demo seed migration after their tickets are cleared.

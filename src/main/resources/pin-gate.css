@@ -1,0 +1,14 @@
+.root { -fx-background-color: #f2f5f0; -fx-font-family: "Segoe UI"; -fx-font-size: 14px; }
+.card { -fx-background-color: white; -fx-background-radius: 18; -fx-border-color: #dbe3d8; -fx-border-radius: 18; }
+.label { -fx-text-fill: #203027; }
+.brand { -fx-text-fill: #39794c; -fx-font-size: 12px; -fx-font-weight: bold; }
+.title { -fx-font-size: 26px; -fx-font-weight: bold; }
+.description { -fx-text-fill: #59685e; }
+.hint { -fx-text-fill: #657168; -fx-font-size: 12px; }
+.error { -fx-text-fill: #9b3027; }
+.password-field { -fx-background-color: #f8faf7; -fx-border-color: #ccd8c9; -fx-border-radius: 8; -fx-background-radius: 8; -fx-padding: 12; -fx-font-size: 18px; }
+.password-field:focused { -fx-border-color: #39794c; }
+.button { -fx-padding: 12 18; -fx-background-radius: 8; -fx-cursor: hand; }
+.primary { -fx-background-color: #39794c; -fx-text-fill: white; -fx-font-weight: bold; }
+.primary:hover { -fx-background-color: #2c623c; }
+.secondary { -fx-background-color: #edf2ea; -fx-text-fill: #203027; }

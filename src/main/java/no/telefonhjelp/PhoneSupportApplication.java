@@ -16,6 +16,8 @@ import com.sun.jna.platform.win32.Shell32Util;
 import no.telefonhjelp.config.StoragePaths;
 import no.telefonhjelp.config.DesktopSession;
 import no.telefonhjelp.service.FileAuthorizations;
+import no.telefonhjelp.security.PinAccess;
+import no.telefonhjelp.security.PinGate;
 import netscape.javascript.JSObject;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -41,8 +43,11 @@ public class PhoneSupportApplication extends Application {
     private static FileChannel lockChannel;
     private static FileLock appLock;
     private static volatile String restartCommand;
-    private ConfigurableApplicationContext context;
+    private volatile ConfigurableApplicationContext context;
     private DesktopBridge desktopBridge;
+    private PinGate pinGate;
+    private volatile boolean stopping;
+    private Thread startupThread;
 
     public static void main(String[] args) throws Exception {
         launchDesktop(args);
@@ -63,14 +68,6 @@ public class PhoneSupportApplication extends Application {
         if (appLock == null) throw new IllegalStateException("Telefonhjelp kjører allerede.");
     }
 
-    @Override
-    public void init() {
-        context = new SpringApplicationBuilder(PhoneSupportApplication.class)
-                .headless(false)
-                .properties("logging.file.name=" + logPath())
-                .run(getParameters().getRaw().toArray(String[]::new));
-    }
-
     private String logPath() {
         try { return new StoragePaths().root().resolve("telefonhjelp.log").toString(); }
         catch (IOException exception) { throw new IllegalStateException("Kunne ikke opprette privat loggmappe.", exception); }
@@ -78,6 +75,41 @@ public class PhoneSupportApplication extends Application {
 
     @Override
     public void start(Stage stage) {
+        try {
+            pinGate = new PinGate(stage, new PinAccess(new StoragePaths(), java.time.Clock.systemUTC()), () -> startUnlocked(stage));
+        } catch (Exception exception) {
+            var error = new Alert(Alert.AlertType.ERROR, "PIN-beskyttelsen kan ikke åpnes. Programmet forblir låst.", ButtonType.CLOSE);
+            error.showAndWait();
+            Platform.exit();
+        }
+    }
+
+    private void startUnlocked(Stage stage) {
+        var loading = new javafx.scene.control.Label("Åpner Telefonhjelp …");
+        stage.setScene(new Scene(new javafx.scene.layout.StackPane(loading), 580, 660));
+        var startup = new javafx.concurrent.Task<ConfigurableApplicationContext>() {
+            @Override protected ConfigurableApplicationContext call() {
+                var started = new SpringApplicationBuilder(PhoneSupportApplication.class)
+                        .headless(false)
+                        .properties("logging.file.name=" + logPath())
+                        .run(getParameters().getRaw().toArray(String[]::new));
+                synchronized (PhoneSupportApplication.this) {
+                    if (stopping) started.close();
+                    else context = started;
+                }
+                return started;
+            }
+        };
+        startup.setOnSucceeded(event -> { if (!stopping) showApplication(stage); });
+        startup.setOnFailed(event -> {
+            if (stopping) return;
+            var error = new Alert(Alert.AlertType.ERROR, "Programmet kunne ikke åpnes. Lukk programmet og prøv igjen.", ButtonType.CLOSE);
+            error.initOwner(stage); error.showAndWait(); Platform.exit();
+        });
+        startupThread = new Thread(startup, "application-startup"); startupThread.setDaemon(true); startupThread.start();
+    }
+
+    private void showApplication(Stage stage) {
         var port = ((WebServerApplicationContext) context).getWebServer().getPort();
         var origin = "http://127.0.0.1:" + port;
         var webView = new WebView();
@@ -146,6 +178,10 @@ public class PhoneSupportApplication extends Application {
 
     @Override
     public void stop() throws Exception {
+        synchronized (this) { stopping = true; }
+        if (pinGate != null) pinGate.close();
+        // Retain the instance lock until an in-flight backend startup has shut down.
+        if (startupThread != null) startupThread.join();
         if (context != null) context.close();
         if (appLock != null) appLock.release();
         if (lockChannel != null) lockChannel.close();

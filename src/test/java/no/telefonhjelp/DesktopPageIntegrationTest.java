@@ -3,6 +3,9 @@ package no.telefonhjelp;
 import javafx.application.Platform;
 import javafx.scene.web.WebView;
 import no.telefonhjelp.config.DesktopSession;
+import no.telefonhjelp.config.StoragePaths;
+import no.telefonhjelp.security.PinAccess;
+import no.telefonhjelp.security.PinGate;
 import no.telefonhjelp.service.FileAuthorizations;
 import no.telefonhjelp.service.SecretService;
 import no.telefonhjelp.domain.ApiModels.TemporaryValue;
@@ -41,6 +44,7 @@ class DesktopPageIntegrationTest {
         started.get(10, TimeUnit.SECONDS);
         var origin = "http://127.0.0.1:" + port;
         try {
+            nativePinGateRequiresUnlock();
             fx(() -> {
                 view = new WebView();
                 window = new javafx.stage.Stage(javafx.stage.StageStyle.UTILITY);
@@ -67,9 +71,73 @@ class DesktopPageIntegrationTest {
             fx(() -> { view.getEngine().load(origin + "/api/bootstrap"); return null; });
             until("document.querySelector('.ticket-table') !== null && location.pathname === '/' && location.hash === '#/'");
         } finally {
-            fx(() -> { view.getEngine().getLoadWorker().cancel(); window.close(); return null; });
+            fx(() -> { if (view != null) view.getEngine().getLoadWorker().cancel(); if (window != null) window.close(); return null; });
             Platform.exit();
         }
+    }
+
+    private void nativePinGateRequiresUnlock() throws Exception {
+        var clock = new GateClock();
+        var paths = new StoragePaths(data.resolve("pin-gate-test").toString());
+        var access = new PinAccess(paths, clock);
+        var unlocked = new java.util.concurrent.atomic.AtomicInteger();
+        var gate = new java.util.concurrent.atomic.AtomicReference<PinGate>();
+        fx(() -> {
+            window = new javafx.stage.Stage(javafx.stage.StageStyle.UTILITY); window.setOpacity(0);
+            gate.set(new PinGate(window, access, unlocked::incrementAndGet));
+            pin("pin-input").setText("048291"); pin("pin-confirm").setText("048292");
+            assertThat(window.getScene().lookup("#pin-submit").isDisabled()).isTrue();
+            assertThat(unlocked.get()).isZero();
+            pin("pin-confirm").setText("048291");
+            ((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).fire(); return null;
+        });
+        awaitFx(() -> unlocked.get() == 1);
+        fx(() -> { gate.get().close(); window.close(); return null; });
+        unlocked.set(0);
+        var reopened = new PinAccess(paths, clock);
+        fx(() -> {
+            window = new javafx.stage.Stage(javafx.stage.StageStyle.UTILITY); window.setOpacity(0);
+            gate.set(new PinGate(window, reopened, unlocked::incrementAndGet)); return null;
+        });
+        try {
+            for (int i = 0; i < 5; i++) {
+                fx(() -> {
+                    pin("pin-input").setText("048292");
+                    ((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).fire(); return null;
+                });
+                awaitFx(() -> !((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).getText().equals("Kontrollerer …"));
+                assertThat(unlocked.get()).isZero();
+            }
+            assertThat(fx(() -> pin("pin-input").isDisabled())).isTrue();
+            assertThat(fx(() -> ((javafx.scene.control.Label) window.getScene().lookup("#pin-status")).getText())).contains("midlertidig låst");
+            fx(() -> {
+                pin("pin-input").setText("048291");
+                ((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).fire(); return null;
+            });
+            assertThat(unlocked.get()).isZero();
+            clock.now = clock.now.plusSeconds(60);
+            awaitFx(() -> !pin("pin-input").isDisabled());
+            fx(() -> { ((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).fire(); return null; });
+            awaitFx(() -> unlocked.get() == 1);
+        } finally { fx(() -> { gate.get().close(); window.close(); return null; }); }
+    }
+
+    private javafx.scene.control.PasswordField pin(String id) { return (javafx.scene.control.PasswordField) window.getScene().lookup("#" + id); }
+
+    private void awaitFx(Supplier<Boolean> condition) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (System.nanoTime() < deadline) {
+            if (fx(condition)) return;
+            Thread.sleep(50);
+        }
+        fail("Native PIN gate did not reach its expected state");
+    }
+
+    private static final class GateClock extends java.time.Clock {
+        volatile java.time.Instant now = java.time.Instant.parse("2026-09-17T12:00:00Z");
+        @Override public java.time.ZoneId getZone() { return java.time.ZoneOffset.UTC; }
+        @Override public java.time.Clock withZone(java.time.ZoneId zone) { return this; }
+        @Override public java.time.Instant instant() { return now; }
     }
 
     private <T> T fx(Supplier<T> operation) throws Exception {

@@ -28,6 +28,12 @@ $env:JAVA_HOME = 'C:\sti\til\jdk-25'
 
 Maven bygger og kopierer Vue-grensesnittet automatisk. JavaFX og øvrige biblioteker hentes av Maven. Data lagres under `%LOCALAPPDATA%\PhoneSupport`.
 
+## PIN-kode
+
+Fra versjon 1.0.4 opprettes en PIN-kode med 6–12 sifre ved første oppstart. PIN-koden må oppgis hver gang skrivebordsprogrammet startes. API-et og saksdata åpnes først etter vellykket opplåsing. Ansattvalg fungerer som før.
+
+Hver gruppe på fem feil PIN-koder gir en sperre på henholdsvis 1 minutt, 2 minutter, 5 minutter, 10 minutter, 30 minutter, 60 minutter, 5 timer og 24 timer. Fem nye feil etter dette gir permanent sperre (45 feil totalt uten vellykket opplåsing). Omstart nullstiller ikke sperren. Riktig PIN-kode etter at ventetiden er over nullstiller hele feilrekken. Under en aktiv sperre kan heller ikke riktig PIN-kode åpne programmet. Permanent sperre har ingen automatisk gjenoppretting.
+
 ## Mappestruktur
 
 ```text
@@ -68,7 +74,9 @@ npm run typecheck
 
 ## Demodata
 
-Utviklingsmodusen og skrivebordsdatabasen inneholder et representativt datasett for rapporttesting: 8 ansatte (2 deaktiverte), 70 kunder og 140 saker fordelt på åpne, ventende, eskalerte og lukkede saker. Flyway legger datasettet inn én gang via `V3__add_demo_report_data.sql`; eksisterende data beholdes. Velg en rapportperiode som dekker de siste fem dagene for å få med hele datasettet i Excel-rapporten.
+Utviklingsmodusen og nye skrivebordsdatabaser får et representativt datasett for rapporttesting: 8 ansatte (2 deaktiverte), 70 kunder og 140 saker fordelt på åpne, ventende, eskalerte og lukkede saker. Flyway legger datasettet inn én gang via `V3__add_demo_report_data.sql`; eksisterende data beholdes. Velg en rapportperiode som dekker de siste fem dagene for å få med hele datasettet i Excel-rapporten.
+
+Den eksisterende lokale installasjonen ble tømt for saker, kommentarer, sakshistorikk og midlertidige verdier 17. september 2026. Kunder og ansatte ble beholdt. Den allerede utførte demomigreringen kjøres ikke på nytt ved omstart; utviklingsmodus og nye testdatabaser har fortsatt demodata. Tidligere sikkerhetskopier kan fortsatt inneholde gamle saker.
 
 ## Windows-pakking
 
