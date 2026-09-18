@@ -15,13 +15,14 @@ export interface TicketGateway {
   bootstrap(): Promise<{ employees: Employee[]; currentEmployeeId: number | null }>
   setCurrentEmployee(employeeId: number): Promise<void>
   matchCustomer(phone: string): Promise<CustomerMatch | null>
+  customerHistory(phone: string, page?: number, size?: number, excludeTicketId?: number): Promise<Ticket[]>
   listTickets(query?: TicketQuery): Promise<Ticket[]>
   getTicket(id: number): Promise<Ticket>
   createTicket(draft: TicketDraft, actorId: number): Promise<Ticket>
   updateTicket(id: number, patch: TicketPatch, actorId: number): Promise<Ticket>
   addComment(id: number, text: string, actorId: number, version: number): Promise<Ticket>
   assign(id: number, employeeId: number, actorId: number, version: number): Promise<Ticket>
-  setStatus(id: number, status: TicketStatus, actorId: number, version: number): Promise<Ticket>
+  setStatus(id: number, status: TicketStatus, actorId: number, version: number, resolutionNote?: string): Promise<Ticket>
   setUrgent(id: number, urgent: boolean, actorId: number, version: number): Promise<Ticket>
   listEmployees(): Promise<Employee[]>
   addEmployee(name: string): Promise<Employee>

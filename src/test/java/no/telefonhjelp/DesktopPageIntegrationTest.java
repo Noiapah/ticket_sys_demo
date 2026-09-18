@@ -8,6 +8,9 @@ import no.telefonhjelp.security.PinAccess;
 import no.telefonhjelp.security.PinGate;
 import no.telefonhjelp.service.FileAuthorizations;
 import no.telefonhjelp.service.SecretService;
+import no.telefonhjelp.service.TicketService;
+import no.telefonhjelp.service.EmployeeService;
+import no.telefonhjelp.domain.ApiModels.*;
 import no.telefonhjelp.domain.ApiModels.TemporaryValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -33,6 +36,8 @@ class DesktopPageIntegrationTest {
     @Autowired DesktopSession session;
     @Autowired FileAuthorizations grants;
     @Autowired SecretService secrets;
+    @Autowired TicketService tickets;
+    @Autowired EmployeeService employees;
     private WebView view;
     private javafx.stage.Stage window;
     private PhoneSupportApplication.DesktopBridge bridge;
@@ -67,6 +72,7 @@ class DesktopPageIntegrationTest {
             until("document.querySelectorAll('.sensitive input').length === 0");
             fx(() -> view.getEngine().executeScript("var injected=document.createElement('script'); injected.textContent='window.inlineExecuted=true'; document.head.appendChild(injected)"));
             assertThat(fx(() -> view.getEngine().executeScript("window.inlineExecuted === true"))).isEqualTo(false);
+            customerHistoryAndResolutionNotes();
             // Navigation to another path is cancelled and returns to the app page.
             fx(() -> { view.getEngine().load(origin + "/api/bootstrap"); return null; });
             until("document.querySelector('.ticket-table') !== null && location.pathname === '/' && location.hash === '#/'");
@@ -74,6 +80,50 @@ class DesktopPageIntegrationTest {
             fx(() -> { if (view != null) view.getEngine().getLoadWorker().cancel(); if (window != null) window.close(); return null; });
             Platform.exit();
         }
+    }
+
+    private void customerHistoryAndResolutionNotes() throws Exception {
+        var actor = employees.list().stream().filter(Employee::active).findFirst().orElseThrow();
+        var previous = tickets.create(new TicketDraft("History UI customer", "98044339", DeviceType.PHONE, "Apple", "iPhone", "", OperatingSystem.IOS, "E-post", "Previous issue", actor.id()));
+        tickets.status(previous.id(), TicketStatus.CLOSED, actor.id(), previous.version(), "Previous resolution");
+        var current = tickets.create(new TicketDraft("History UI customer", "98044339", DeviceType.TABLET, "Apple", "iPad", "", OperatingSystem.IOS, "E-post", "Current issue", actor.id()));
+        fx(() -> view.getEngine().executeScript("location.hash = '#/ny'"));
+        until("document.querySelector('input[inputmode=tel]') !== null");
+        fx(() -> view.getEngine().executeScript("var phone=document.querySelector('input[inputmode=tel]'); phone.value='98044339'; phone.dispatchEvent(new Event('input', {bubbles:true})); var draft=document.querySelector('textarea'); draft.value='Unsaved draft'; draft.dispatchEvent(new Event('input', {bubbles:true}))"));
+        until("document.querySelector('.customer-history > button') !== null");
+        fx(() -> view.getEngine().executeScript("document.querySelector('.customer-history > button').click()"));
+        until("document.querySelectorAll('.customer-history__ticket').length === 2");
+        assertThat(fx(() -> view.getEngine().executeScript("document.querySelector('.customer-history').textContent"))).asString().contains("Previous resolution", "Previous issue", "Current issue");
+        assertThat(fx(() -> view.getEngine().executeScript("document.querySelector('textarea').value"))).isEqualTo("Unsaved draft");
+
+        fx(() -> view.getEngine().executeScript("location.hash = '#/sak/" + current.id() + "'"));
+        until("document.querySelector('.detail-side .button--danger') !== null");
+        fx(() -> view.getEngine().executeScript("document.querySelector('.customer-history > button').click()"));
+        until("document.querySelectorAll('.customer-history__ticket').length === 1");
+        assertThat(fx(() -> view.getEngine().executeScript("document.querySelector('.customer-history').textContent"))).asString().contains("Previous resolution").doesNotContain("Current issue");
+        fx(() -> view.getEngine().executeScript("document.querySelector('.detail-side .button--danger').click()"));
+        until("document.querySelector('.resolution-form textarea') !== null");
+        assertThat(fx(() -> view.getEngine().executeScript("document.querySelector('.resolution-form .button--danger').disabled"))).isEqualTo(true);
+        fx(() -> view.getEngine().executeScript("var note=document.querySelector('.resolution-form textarea'); note.value='Resolved in desktop UI'; note.dispatchEvent(new Event('input', {bubbles:true}))"));
+        until("document.querySelector('.resolution-form .button--danger').disabled === false");
+        fx(() -> view.getEngine().executeScript("document.querySelector('.resolution-form .button--danger').click()"));
+        until("document.querySelector('.resolution-form') === null && document.querySelector('.detail-side select').disabled");
+        assertThat(tickets.get(current.id()).resolutionNote()).isEqualTo("Resolved in desktop UI");
+        fx(() -> view.getEngine().executeScript("document.querySelector('.detail-side .button--primary').click()"));
+        until("document.querySelector('.detail-side .button--danger') !== null");
+        assertThat(fx(() -> view.getEngine().executeScript("document.querySelector('.detail-main').textContent"))).asString().contains("Resolved in desktop UI");
+
+        // A stale write must keep both the case open and the typed note available for retry.
+        var fresh = tickets.get(current.id());
+        tickets.comment(current.id(), "Concurrent change", actor.id(), fresh.version());
+        fx(() -> view.getEngine().executeScript("document.querySelector('.detail-side .button--danger').click()"));
+        until("document.querySelector('.resolution-form textarea') !== null");
+        fx(() -> view.getEngine().executeScript("var retry=document.querySelector('.resolution-form textarea'); retry.value='Keep this note'; retry.dispatchEvent(new Event('input', {bubbles:true}))"));
+        until("document.querySelector('.resolution-form .button--danger').disabled === false");
+        fx(() -> view.getEngine().executeScript("document.querySelector('.resolution-form .button--danger').click()"));
+        until("document.querySelector('.alert--error') !== null");
+        assertThat(fx(() -> view.getEngine().executeScript("document.querySelector('.resolution-form textarea').value"))).isEqualTo("Keep this note");
+        assertThat(tickets.get(current.id()).status()).isEqualTo(TicketStatus.IN_PROGRESS);
     }
 
     private void nativePinGateRequiresUnlock() throws Exception {
@@ -85,11 +135,25 @@ class DesktopPageIntegrationTest {
         fx(() -> {
             window = new javafx.stage.Stage(javafx.stage.StageStyle.UTILITY); window.setOpacity(0);
             gate.set(new PinGate(window, access, unlocked::incrementAndGet));
-            pin("pin-input").setText("048291"); pin("pin-confirm").setText("048292");
-            assertThat(window.getScene().lookup("#pin-submit").isDisabled()).isTrue();
+            var submit = (javafx.scene.control.Button) window.getScene().lookup("#pin-submit");
+            assertThat(submit.isDisabled()).isFalse();
+            submit.fire();
+            assertThat(((javafx.scene.control.Label) window.getScene().lookup("#pin-error")).getText()).contains("4–12");
+            pin("pin-input").setText("048"); pin("pin-confirm").setText("048");
+            submit.fire();
+            assertThat(((javafx.scene.control.Label) window.getScene().lookup("#pin-error")).getText()).contains("4–12");
+            pin("pin-input").setText("0482"); pin("pin-confirm").setText("0483");
+            assertThat(submit.isDisabled()).isFalse();
+            submit.fire();
+            assertThat(((javafx.scene.control.Label) window.getScene().lookup("#pin-error")).getText()).contains("ikke like");
             assertThat(unlocked.get()).isZero();
-            pin("pin-confirm").setText("048291");
-            ((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).fire(); return null;
+            assertThat(access.status().mode()).isEqualTo(PinAccess.Mode.SETUP);
+            pin("pin-confirm").clear();
+            submit.fire();
+            assertThat(((javafx.scene.control.Label) window.getScene().lookup("#pin-error")).getText()).contains("andre feltet");
+            pin("pin-confirm").setText("0482");
+            assertThat(((javafx.scene.control.Label) window.getScene().lookup("#pin-error")).getText()).isEmpty();
+            pin("pin-confirm").fireEvent(new javafx.event.ActionEvent()); return null;
         });
         awaitFx(() -> unlocked.get() == 1);
         fx(() -> { gate.get().close(); window.close(); return null; });
@@ -100,9 +164,15 @@ class DesktopPageIntegrationTest {
             gate.set(new PinGate(window, reopened, unlocked::incrementAndGet)); return null;
         });
         try {
+            fx(() -> {
+                ((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).fire();
+                assertThat(((javafx.scene.control.Label) window.getScene().lookup("#pin-error")).getText()).contains("Oppgi PIN-koden");
+                assertThat(reopened.status().attemptsRemaining()).isEqualTo(5);
+                return null;
+            });
             for (int i = 0; i < 5; i++) {
                 fx(() -> {
-                    pin("pin-input").setText("048292");
+                    pin("pin-input").setText("0483");
                     ((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).fire(); return null;
                 });
                 awaitFx(() -> !((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).getText().equals("Kontrollerer …"));
@@ -111,13 +181,13 @@ class DesktopPageIntegrationTest {
             assertThat(fx(() -> pin("pin-input").isDisabled())).isTrue();
             assertThat(fx(() -> ((javafx.scene.control.Label) window.getScene().lookup("#pin-status")).getText())).contains("midlertidig låst");
             fx(() -> {
-                pin("pin-input").setText("048291");
+                pin("pin-input").setText("0482");
                 ((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).fire(); return null;
             });
             assertThat(unlocked.get()).isZero();
             clock.now = clock.now.plusSeconds(60);
             awaitFx(() -> !pin("pin-input").isDisabled());
-            fx(() -> { ((javafx.scene.control.Button) window.getScene().lookup("#pin-submit")).fire(); return null; });
+            fx(() -> { pin("pin-input").fireEvent(new javafx.event.ActionEvent()); return null; });
             awaitFx(() -> unlocked.get() == 1);
         } finally { fx(() -> { gate.get().close(); window.close(); return null; }); }
     }

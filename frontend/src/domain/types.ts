@@ -54,6 +54,7 @@ export interface Ticket {
   operatingSystem: OperatingSystem
   category: string
   description: string
+  resolutionNote: string
   createdById: number
   createdByName: string
   assignedToId: number

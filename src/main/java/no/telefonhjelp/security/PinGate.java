@@ -44,8 +44,14 @@ public final class PinGate implements AutoCloseable {
         error.setId("pin-error"); error.setWrapText(true); error.getStyleClass().add("error");
         submit.setId("pin-submit"); submit.getStyleClass().add("primary"); submit.setMaxWidth(Double.MAX_VALUE);
         submit.setDefaultButton(true); submit.setOnAction(event -> submit());
-        pin.textProperty().addListener((observable, oldValue, value) -> refresh());
-        repeated.textProperty().addListener((observable, oldValue, value) -> refresh());
+        pin.textProperty().addListener((observable, oldValue, value) -> inputChanged());
+        repeated.textProperty().addListener((observable, oldValue, value) -> inputChanged());
+        pin.setOnAction(event -> {
+            if (access.status().mode() == PinAccess.Mode.SETUP && validLength() && repeated.getText().isEmpty()) repeated.requestFocus();
+            else submit();
+            event.consume();
+        });
+        repeated.setOnAction(event -> { submit(); event.consume(); });
         var brand = new Label("TELEFONHJELP"); brand.getStyleClass().add("brand");
         var warning = new Label("Fem feil gir en ventetid som øker ved nye feil. Etter 45 feil uten vellykket opplåsing blir tilgangen permanent sperret.");
         warning.setWrapText(true); warning.getStyleClass().add("hint");
@@ -71,18 +77,26 @@ public final class PinGate implements AutoCloseable {
         return field;
     }
 
+    private boolean validLength() { return pin.getText().length() >= 4 && pin.getText().length() <= 12; }
+
+    private void inputChanged() {
+        if (!busy && !closed && !failed) error.setText("");
+        refresh();
+    }
+
     private void refresh() {
         if (closed || busy || failed) return;
         var current = access.status();
         boolean setup = current.mode() == PinAccess.Mode.SETUP;
         boolean ready = setup || current.mode() == PinAccess.Mode.READY;
         title.setText(setup ? "Opprett PIN-kode" : "Lås opp programmet");
-        description.setText(setup ? "Velg en PIN-kode med 6–12 sifre. Den må oppgis hver gang programmet starter."
+        description.setText(setup ? "Velg en PIN-kode med 4–12 sifre. Den må oppgis hver gang programmet starter."
                 : "Oppgi PIN-koden for å åpne Telefonhjelp.");
         repeated.setVisible(setup); repeated.setManaged(setup);
         pin.setDisable(!ready); repeated.setDisable(!ready);
         submit.setText(setup ? "Opprett PIN og åpne" : "Lås opp");
-        submit.setDisable(!ready || pin.getLength() == 0 || (setup && (pin.getLength() < 6 || !pin.getText().equals(repeated.getText()))));
+        // Invalid input must explain why confirmation cannot proceed, rather than leave an inert button.
+        submit.setDisable(!ready);
         status.setText(switch (current.mode()) {
             case SETUP -> "Oppbevar PIN-koden trygt. Den kan ikke gjenopprettes.";
             case READY -> current.attemptsRemaining() + " forsøk igjen før neste sperre.";
@@ -94,6 +108,18 @@ public final class PinGate implements AutoCloseable {
     private void submit() {
         if (busy || closed || failed || submit.isDisabled()) return;
         boolean setup = access.status().mode() == PinAccess.Mode.SETUP;
+        if (setup && !validLength()) {
+            error.setText("PIN-koden må bestå av 4–12 sifre."); pin.requestFocus(); return;
+        }
+        if (setup && repeated.getText().isEmpty()) {
+            error.setText("Gjenta PIN-koden i det andre feltet."); repeated.requestFocus(); return;
+        }
+        if (setup && !pin.getText().equals(repeated.getText())) {
+            error.setText("PIN-kodene er ikke like. Skriv den samme PIN-koden i begge feltene."); repeated.requestFocus(); return;
+        }
+        if (!setup && pin.getText().isEmpty()) {
+            error.setText("Oppgi PIN-koden."); pin.requestFocus(); return;
+        }
         char[] candidate = pin.getText().toCharArray(), confirmation = repeated.getText().toCharArray();
         busy = true; pin.clear(); repeated.clear(); pin.setDisable(true); repeated.setDisable(true); submit.setDisable(true);
         error.setText(""); submit.setText("Kontrollerer …");

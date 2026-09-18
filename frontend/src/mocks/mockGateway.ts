@@ -48,12 +48,19 @@ export const gateway: TicketGateway = {
   async setCurrentEmployee(id) { currentEmployeeId = id },
   async matchCustomer(phone) { const normalized = normalizePhone(phone).normalized; const matches = tickets.filter(item => item.customerPhoneNormalized === normalized); return matches.length ? { id: matches[0].id, name: matches[0].customerName, phoneNormalized: normalized, previousTickets: matches.length } : null },
   async listTickets(query) { const page = query?.page ?? 0; const size = query?.size ?? 50; return copy(filtered(query).sort((a, b) => Number(b.urgent) - Number(a.urgent) || a.createdAt.localeCompare(b.createdAt) || a.id - b.id).slice(page * size, (page + 1) * size).map(item => ({ ...item, comments: [], history: [] }))) },
+  async customerHistory(phone, page = 0, size = 10, excludeTicketId) {
+    if (page < 0 || page > 10000 || size < 1 || size > 100) throw new Error('Ugyldig side.')
+    const normalized = normalizePhone(phone).normalized
+    return copy(tickets.filter(item => item.customerPhoneNormalized === normalized && item.id !== excludeTicketId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id - a.id)
+      .slice(page * size, (page + 1) * size).map(item => ({ ...item, comments: [], history: [] })))
+  },
   async getTicket(id) { return copy(ticket(id)) },
   async createTicket(draft: TicketDraft, actorId: number) {
     const actor = employee(actorId)
     const phone = normalizePhone(draft.customerPhone)
     const now = new Date().toISOString()
-    const item: Ticket = { ...draft, newDeviceModel: draft.category === TRANSFER_CATEGORY ? draft.newDeviceModel.trim() : '', id: nextTicketId++, version: 0, customerPhoneNormalized: phone.normalized, createdById: actor.id, createdByName: actor.name, assignedToId: actor.id, assignedToName: actor.name, status: 'IN_PROGRESS', urgent: false, createdAt: now, updatedAt: now, comments: [], history: [] }
+    const item: Ticket = { ...draft, resolutionNote: '', newDeviceModel: draft.category === TRANSFER_CATEGORY ? draft.newDeviceModel.trim() : '', id: nextTicketId++, version: 0, customerPhoneNormalized: phone.normalized, createdById: actor.id, createdByName: actor.name, assignedToId: actor.id, assignedToName: actor.name, status: 'IN_PROGRESS', urgent: false, createdAt: now, updatedAt: now, comments: [], history: [] }
     tickets.push(item)
     history(item, actorId, 'CREATED', 'Saken ble opprettet')
     history(item, actorId, 'STATUS', 'Status satt til Pågår')
@@ -85,12 +92,19 @@ export const gateway: TicketGateway = {
     history(item, actorId, 'ASSIGNED', `Tildelt endret: ${old} → ${target.name}`)
     return copy(item)
   },
-  async setStatus(id, status, actorId, version) {
+  async setStatus(id, status, actorId, version, resolutionNote) {
     const item = ticket(id)
     if (item.version !== version) throw new Error('Saken er endret. Last den inn på nytt.')
     if (item.status === 'CLOSED' && status !== 'IN_PROGRESS') throw new Error('En lukket sak kan bare åpnes igjen.')
+    if (item.status === status) return copy(item)
+    employee(actorId)
+    const note = resolutionNote?.trim() ?? ''
+    if (status === 'CLOSED' && !note) throw new Error('Skriv et avslutningsnotat før saken lukkes.')
+    if (status === 'CLOSED' && note.length > 4000) throw new Error('Avslutningsnotatet er for langt.')
     const old = item.status; item.status = status; item.closedAt = status === 'CLOSED' ? new Date().toISOString() : null
+    if (status === 'CLOSED') item.resolutionNote = note
     history(item, actorId, status === 'CLOSED' ? 'CLOSED' : old === 'CLOSED' ? 'REOPENED' : 'STATUS', `${statusLabels[old]} → ${statusLabels[status]}`)
+    if (status === 'CLOSED') history(item, actorId, 'RESOLUTION', note)
     return copy(item)
   },
   async setUrgent(id, urgent, actorId, version) {
@@ -119,7 +133,7 @@ export const gateway: TicketGateway = {
     const closed = cohort.filter(item => item.closedAt)
     const durations = closed.map(item => (new Date(item.closedAt!).getTime() - new Date(item.createdAt).getTime()) / 60_000)
     const percentage = (predicate: (minutes: number) => boolean) => durations.length ? Math.round(durations.filter(predicate).length / durations.length * 100) : 0
-    return { created: cohort.length, closed: closed.length, open: cohort.filter(item => item.status !== 'CLOSED').length, urgent: cohort.filter(item => item.urgent || item.history.some(event => event.eventType === 'URGENT' && event.summary.includes('Markert'))).length, escalated: cohort.filter(item => item.history.some(event => event.summary.includes('Eskalert'))).length, averageMinutes: durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0, within30Percent: percentage(m => m <= 30), within60Percent: percentage(m => m <= 60), over60Percent: percentage(m => m > 60) }
+    return { created: cohort.length, closed: closed.length, open: cohort.filter(item => item.status !== 'CLOSED').length, urgent: cohort.filter(item => item.urgent || item.history.some(event => event.eventType === 'URGENT' && event.summary.includes('Markert'))).length, escalated: cohort.filter(item => item.history.some(event => event.eventType !== 'RESOLUTION' && event.summary.includes('Eskalert'))).length, averageMinutes: durations.length ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0, within30Percent: percentage(m => m <= 30), within60Percent: percentage(m => m <= 60), over60Percent: percentage(m => m > 60) }
   },
   async exportReport() { return new Blob(['Rapporteksport krever skrivebordsversjonen.'], { type: 'text/plain' }) },
   async backup() { return 'Minnedata kan ikke sikkerhetskopieres.' },

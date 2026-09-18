@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AgeIndicator from '../components/AgeIndicator.vue'
 import DeviceAutocomplete from '../components/DeviceAutocomplete.vue'
+import CustomerHistory from '../components/CustomerHistory.vue'
 import { categories, TRANSFER_CATEGORY } from '../data/categories'
 import { dateTime, formatPhone, timeOnly } from '../domain/format'
 import { statusLabels, type OperatingSystem, type Ticket, type TicketStatus } from '../domain/types'
@@ -20,6 +21,8 @@ const credentialExists = (key: string) => credentials.value.some(value => value.
 const accountLabel = computed(() => item.value?.operatingSystem === 'IOS' ? 'Apple-konto' : item.value?.operatingSystem === 'ANDROID' ? 'Google-konto' : 'Konto')
 const codeLabel = computed(() => item.value?.operatingSystem === 'IOS' || item.value?.operatingSystem === 'ANDROID' ? 'Skjermkode' : 'Enhetskode')
 const active = computed(() => item.value?.status !== 'CLOSED')
+const closing = ref(false)
+const resolutionNote = ref('')
 
 function apply(ticket: Ticket) { item.value = ticket; Object.assign(edit, { customerName: ticket.customerName, customerPhone: ticket.customerPhone, deviceModel: ticket.deviceModel, newDeviceModel: ticket.newDeviceModel, manufacturer: ticket.manufacturer, operatingSystem: ticket.operatingSystem, category: ticket.category, description: ticket.description }) }
 let ticketLoad = 0
@@ -33,6 +36,11 @@ async function revealCredentials() {
 const message = (cause: unknown) => cause instanceof Error ? cause.message : 'Noe gikk galt.'
 async function action(operation: (ticket: Ticket) => Promise<Ticket>) { if (!item.value) return; busy.value = true; error.value = ''; try { apply(await operation(item.value)) } catch (cause) { error.value = message(cause) } finally { busy.value = false } }
 async function setStatus(status: TicketStatus) { if (!item.value || !app.currentEmployeeId) return; await action(ticket => gateway.setStatus(ticket.id, status, app.currentEmployeeId!, ticket.version)) }
+async function closeTicket() {
+  if (!item.value || !app.currentEmployeeId || busy.value || !resolutionNote.value.trim()) return
+  await action(ticket => gateway.setStatus(ticket.id, 'CLOSED', app.currentEmployeeId!, ticket.version, resolutionNote.value))
+  if (item.value.status === 'CLOSED') { closing.value = false; resolutionNote.value = '' }
+}
 async function assign(employeeId: number) { if (!item.value || !app.currentEmployeeId) return; await action(ticket => gateway.assign(ticket.id, employeeId, app.currentEmployeeId!, ticket.version)) }
 async function toggleUrgent() { if (!item.value || !app.currentEmployeeId) return; await action(ticket => gateway.setUrgent(ticket.id, !ticket.urgent, app.currentEmployeeId!, ticket.version)) }
 async function addComment() { if (!item.value || !app.currentEmployeeId || !comment.value.trim()) return; const text = comment.value; comment.value = ''; await action(ticket => gateway.addComment(ticket.id, text, app.currentEmployeeId!, ticket.version)) }
@@ -60,6 +68,7 @@ const onVisibility = () => document.hidden ? exposure.clear() : exposure.expire(
 let secretTimer: number
 watch(() => app.currentEmployeeId, clearExposure, { flush: 'sync' })
 watch(() => route.params.id, load)
+watch(() => route.params.id, () => { closing.value = false; resolutionNote.value = ''; editing.value = false })
 onMounted(() => {
   void load()
   secretTimer = window.setInterval(checkExposure, 1000)
@@ -92,16 +101,32 @@ onBeforeUnmount(() => {
     <div v-if="error" class="alert alert--error">{{ error }}</div>
     <div class="detail-grid">
       <div class="detail-main">
+        <section class="card section-card"><h2>Kundehistorikk</h2><CustomerHistory :phone="item.customerPhoneNormalized" :exclude-ticket-id="item.id" /></section>
         <section class="card section-card">
           <div class="section-heading"><h2>Saksinformasjon</h2><button v-if="active" class="text-button" @click="editing = !editing">{{ editing ? 'Avbryt' : 'Rediger' }}</button></div>
           <form v-if="editing" class="edit-form" @submit.prevent="saveEdit"><div class="two-columns"><label>Navn<input v-model="edit.customerName" required /></label><label>Telefon<input v-model="edit.customerPhone" required /></label></div><DeviceAutocomplete v-model="edit.deviceModel" v-model:other="otherModel" :type="item.deviceType" @select="value => Object.assign(edit, { deviceModel: value.model, manufacturer: value.manufacturer, operatingSystem: value.operatingSystem })" /><label>Kategori<select v-model="edit.category"><option v-for="category in categories" :key="category">{{ category }}</option></select></label><label v-if="edit.category === TRANSFER_CATEGORY">Enhetsmodell (ny enhet)<input v-model="edit.newDeviceModel" placeholder="F.eks. iPhone 16 Pro" /></label><label>Problem<textarea v-model="edit.description" rows="3" required></textarea></label><button class="button button--primary" :disabled="busy">Lagre endringer</button></form>
           <dl v-else class="facts"><div><dt>Kategori</dt><dd>{{ item.category }}</dd></div><div v-if="item.newDeviceModel"><dt>Ny enhet</dt><dd>{{ item.newDeviceModel }}</dd></div><div><dt>Problem</dt><dd>{{ item.description }}</dd></div><div><dt>Opprettet</dt><dd>{{ dateTime.format(new Date(item.createdAt)) }} av {{ item.createdByName }}</dd></div></dl>
         </section>
+        <section v-if="item.resolutionNote || !active" class="card section-card"><h2>{{ active ? 'Siste avslutningsnotat' : 'Avslutningsnotat' }}</h2><p class="note-text">{{ item.resolutionNote || 'Ingen avslutningsnotat registrert.' }}</p></section>
         <section class="card section-card comments"><h2>Kommentarer</h2><div v-if="!item.comments.length" class="muted">Ingen kommentarer ennå.</div><article v-for="entry in item.comments" :key="entry.id"><header><strong>{{ entry.employeeName }}</strong><time>{{ dateTime.format(new Date(entry.createdAt)) }}</time></header><p>{{ entry.text }}</p></article><form v-if="active" class="comment-form" @submit.prevent="addComment"><label><span class="sr-only">Ny kommentar</span><textarea v-model="comment" rows="2" placeholder="Legg til informasjon…" required></textarea></label><button class="button button--primary" :disabled="busy || !comment.trim()">Legg til kommentar</button></form></section>
-        <section class="card section-card"><h2>Historikk</h2><ol class="timeline"><li v-for="event in [...item.history].reverse()" :key="event.id"><time>{{ timeOnly.format(new Date(event.createdAt)) }}</time><span></span><div><strong>{{ event.summary }}</strong><small>{{ event.actorName }} · {{ dateTime.format(new Date(event.createdAt)) }}</small></div></li></ol></section>
+        <section class="card section-card"><h2>Historikk</h2><ol class="timeline"><li v-for="event in [...item.history].reverse()" :key="event.id"><time>{{ timeOnly.format(new Date(event.createdAt)) }}</time><span></span><div><strong class="note-text">{{ event.eventType === 'RESOLUTION' ? 'Avslutningsnotat: ' : '' }}{{ event.summary }}</strong><small>{{ event.actorName }} · {{ dateTime.format(new Date(event.createdAt)) }}</small></div></li></ol></section>
       </div>
       <aside class="detail-side">
-        <section class="card section-card"><h2>Behandling</h2><label>Tildelt til<select :value="item.assignedToId" :disabled="busy || !active" @change="assign(Number(($event.target as HTMLSelectElement).value))"><option v-for="employee in app.activeEmployees" :key="employee.id" :value="employee.id">{{ employee.name }}</option></select></label><label>Status<select :value="item.status" :disabled="busy || !active" @change="setStatus(($event.target as HTMLSelectElement).value as TicketStatus)"><option v-for="(label, status) in statusLabels" :key="status" :value="status" :disabled="status === 'CLOSED'">{{ label }}</option></select></label><button v-if="active" class="button button--danger button--block" :disabled="busy" @click="setStatus('CLOSED')">Lukk saken</button><button v-else class="button button--primary button--block" :disabled="busy" @click="setStatus('IN_PROGRESS')">Åpne saken igjen</button></section>
+        <section class="card section-card">
+          <h2>Behandling</h2>
+          <label>Tildelt til<select :value="item.assignedToId" :disabled="busy || !active" @change="assign(Number(($event.target as HTMLSelectElement).value))"><option v-for="employee in app.activeEmployees" :key="employee.id" :value="employee.id">{{ employee.name }}</option></select></label>
+          <label>Status<select :value="item.status" :disabled="busy || !active" @change="setStatus(($event.target as HTMLSelectElement).value as TicketStatus)"><option v-for="(label, status) in statusLabels" :key="status" :value="status" :disabled="status === 'CLOSED'">{{ label }}</option></select></label>
+          <template v-if="active">
+            <button v-if="!closing" class="button button--danger button--block" :disabled="busy" @click="closing = true">Lukk saken</button>
+            <form v-else class="resolution-form" @submit.prevent="closeTicket">
+              <label>Avslutningsnotat<textarea v-model="resolutionNote" rows="4" maxlength="4000" required :disabled="busy" placeholder="Hva ble gjort, og hva ble resultatet?" /></label>
+              <small>Beskriv løsningen eller hvorfor saken avsluttes. Ikke ta med passord eller koder.</small>
+              <button class="button button--danger button--block" :disabled="busy || !resolutionNote.trim()">{{ busy ? 'Lagrer…' : 'Lagre og lukk saken' }}</button>
+              <button type="button" class="text-button" :disabled="busy" @click="closing = false">Avbryt</button>
+            </form>
+          </template>
+          <button v-else class="button button--primary button--block" :disabled="busy" @click="setStatus('IN_PROGRESS')">Åpne saken igjen</button>
+        </section>
         <section class="card section-card sensitive">
           <div class="section-heading"><div><p class="eyebrow">Midlertidig</p><h2>Sensitiv informasjon</h2></div><span>ⓘ</span></div>
           <p class="sensitive-note">Hvert felt utløper 24 timer etter siste lagring. Ikke skriv dette i kommentarer.</p>

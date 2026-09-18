@@ -35,6 +35,9 @@ class LocalApiSecurityIntegrationTest {
     }
 
     @Test void protectsEveryDataEndpointAndDoesNotExposeTheCredential() throws Exception {
+        assertThat(request("GET", "/api/customers/history?phone=123", null, null, null).statusCode()).isEqualTo(401);
+        assertThat(request("GET", "/api/customers/history?phone=123", session.credential(), null, null).body()).isEqualTo("[]");
+        assertThat(request("GET", "/api/customers/history?phone=123&size=101", session.credential(), null, null).statusCode()).isEqualTo(400);
         for (var path : new String[]{"/api/bootstrap", "/api/employees", "/api/tickets", "/api/tickets/1/temporary-info", "/api/customers/match?phone=123", "/api/reports/summary"}) {
             assertThat(request("GET", path, null, null, null).statusCode()).as(path).isEqualTo(401);
         }

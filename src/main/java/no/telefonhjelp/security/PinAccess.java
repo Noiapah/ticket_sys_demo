@@ -46,7 +46,7 @@ public final class PinAccess {
     public synchronized void setup(char[] pin, char[] repeated) throws Exception {
         state = read();
         if (state != null) throw new IllegalStateException("PIN-koden er allerede opprettet.");
-        if (!validPin(pin)) throw new IllegalArgumentException("PIN-koden må bestå av 6–12 sifre.");
+        if (!validPin(pin)) throw new IllegalArgumentException("PIN-koden må bestå av 4–12 sifre.");
         if (!Arrays.equals(pin, repeated)) throw new IllegalArgumentException("PIN-kodene er ikke like.");
         byte[] salt = new byte[32];
         new SecureRandom().nextBytes(salt);
@@ -87,7 +87,7 @@ public final class PinAccess {
     }
 
     private static boolean validPin(char[] pin) {
-        if (pin == null || pin.length < 6 || pin.length > 12) return false;
+        if (pin == null || pin.length < 4 || pin.length > 12) return false;
         for (char digit : pin) if (digit < '0' || digit > '9') return false;
         return true;
     }

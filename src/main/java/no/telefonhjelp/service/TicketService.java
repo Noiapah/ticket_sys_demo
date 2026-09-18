@@ -50,6 +50,18 @@ public class TicketService {
         return jdbc.query(sql.toString(), this::mapTicketWithoutChildren, args.toArray());
     }
 
+    public List<Ticket> customerHistory(String phone, Long excludeTicketId, int page, int size) {
+        InputLimits.text(phone, 40);
+        if (phone == null || phone.isBlank() || page < 0 || page > 10_000 || size < 1 || size > 100) throw AppException.badRequest("Ugyldig kunde eller side.");
+        var sql = BASE_SQL + " WHERE c.phone_normalized=?";
+        var args = new ArrayList<Object>();
+        args.add(PhoneNormalizer.normalize(phone));
+        if (excludeTicketId != null) { sql += " AND t.id<>?"; args.add(excludeTicketId); }
+        sql += " ORDER BY t.created_at DESC,t.id DESC LIMIT ? OFFSET ?";
+        args.add(size); args.add(page * size);
+        return jdbc.query(sql, this::mapTicketWithoutChildren, args.toArray());
+    }
+
     public Ticket get(long id) {
         var values = jdbc.query(BASE_SQL + " WHERE t.id=?", this::mapTicketWithoutChildren, id);
         if (values.isEmpty()) throw AppException.notFound("Fant ikke saken.");
@@ -126,16 +138,23 @@ public class TicketService {
     }
 
     @Transactional
-    public Ticket status(long id, TicketStatus status, long actorId, long version) {
+    public Ticket status(long id, TicketStatus status, long actorId, long version, String resolutionNote) {
         if (status == null) throw AppException.badRequest("Velg en status.");
         var current = get(id); var actor = employees.require(actorId, true);
         if (current.version() != version) throw AppException.conflict("Saken er endret. Last den inn på nytt.");
         if (current.status() == TicketStatus.CLOSED && status != TicketStatus.IN_PROGRESS) throw AppException.badRequest("En lukket sak kan bare åpnes igjen.");
         if (current.status() == status) return current;
+        var note = clean(resolutionNote);
+        if (status == TicketStatus.CLOSED) {
+            InputLimits.text(note, 4000);
+            if (note.isBlank()) throw AppException.badRequest("Skriv et avslutningsnotat før saken lukkes.");
+        }
         var now = Instant.now().toString(); var closed = status == TicketStatus.CLOSED ? now : null;
         updateVersioned("UPDATE tickets SET status=?,closed_at=?,updated_at=?,version=version+1 WHERE id=? AND version=?", status.name(), closed, now, id, version);
         var event = status == TicketStatus.CLOSED ? "CLOSED" : current.status() == TicketStatus.CLOSED ? "REOPENED" : "STATUS";
-        addHistory(id, actor.id(), event, label(current.status()) + " → " + label(status), now); return get(id);
+        addHistory(id, actor.id(), event, label(current.status()) + " → " + label(status), now);
+        if (status == TicketStatus.CLOSED) addHistory(id, actor.id(), "RESOLUTION", note, now);
+        return get(id);
     }
 
     @Transactional
@@ -178,14 +197,14 @@ public class TicketService {
     private Ticket withChildren(Ticket ticket) {
         var comments = jdbc.query("SELECT c.id,c.employee_id,e.name employee_name,c.text,c.created_at FROM comments c JOIN employees e ON e.id=c.employee_id WHERE c.ticket_id=? ORDER BY c.created_at", (rs, n) -> new Comment(rs.getLong("id"), rs.getLong("employee_id"), rs.getString("employee_name"), rs.getString("text"), Instant.parse(rs.getString("created_at"))), ticket.id());
         var history = jdbc.query("SELECT h.id,h.actor_employee_id,e.name actor_name,h.event_type,h.summary,h.created_at FROM ticket_history h JOIN employees e ON e.id=h.actor_employee_id WHERE h.ticket_id=? ORDER BY h.created_at,h.id", (rs, n) -> new HistoryEvent(rs.getLong("id"), rs.getLong("actor_employee_id"), rs.getString("actor_name"), rs.getString("event_type"), rs.getString("summary"), Instant.parse(rs.getString("created_at"))), ticket.id());
-        return new Ticket(ticket.id(), ticket.version(), ticket.customerName(), ticket.customerPhone(), ticket.customerPhoneNormalized(), ticket.deviceType(), ticket.manufacturer(), ticket.deviceModel(), ticket.newDeviceModel(), ticket.operatingSystem(), ticket.category(), ticket.description(), ticket.createdById(), ticket.createdByName(), ticket.assignedToId(), ticket.assignedToName(), ticket.status(), ticket.urgent(), ticket.createdAt(), ticket.updatedAt(), ticket.closedAt(), comments, history);
+        return new Ticket(ticket.id(), ticket.version(), ticket.customerName(), ticket.customerPhone(), ticket.customerPhoneNormalized(), ticket.deviceType(), ticket.manufacturer(), ticket.deviceModel(), ticket.newDeviceModel(), ticket.operatingSystem(), ticket.category(), ticket.description(), ticket.resolutionNote(), ticket.createdById(), ticket.createdByName(), ticket.assignedToId(), ticket.assignedToName(), ticket.status(), ticket.urgent(), ticket.createdAt(), ticket.updatedAt(), ticket.closedAt(), comments, history);
     }
 
     private Ticket mapTicketWithoutChildren(ResultSet rs, int row) throws SQLException {
         var closed = rs.getString("closed_at");
-        return new Ticket(rs.getLong("id"), rs.getLong("version"), rs.getString("customer_name"), rs.getString("phone_display"), rs.getString("phone_normalized"), DeviceType.valueOf(rs.getString("device_type")), rs.getString("manufacturer"), rs.getString("device_model"), rs.getString("new_device_model"), OperatingSystem.valueOf(rs.getString("operating_system")), rs.getString("category"), rs.getString("description"), rs.getLong("created_by"), rs.getString("created_by_name"), rs.getLong("assigned_to"), rs.getString("assigned_to_name"), TicketStatus.valueOf(rs.getString("status")), rs.getBoolean("urgent"), Instant.parse(rs.getString("created_at")), Instant.parse(rs.getString("updated_at")), closed == null ? null : Instant.parse(closed), List.of(), List.of());
+        return new Ticket(rs.getLong("id"), rs.getLong("version"), rs.getString("customer_name"), rs.getString("phone_display"), rs.getString("phone_normalized"), DeviceType.valueOf(rs.getString("device_type")), rs.getString("manufacturer"), rs.getString("device_model"), rs.getString("new_device_model"), OperatingSystem.valueOf(rs.getString("operating_system")), rs.getString("category"), rs.getString("description"), rs.getString("resolution_note"), rs.getLong("created_by"), rs.getString("created_by_name"), rs.getLong("assigned_to"), rs.getString("assigned_to_name"), TicketStatus.valueOf(rs.getString("status")), rs.getBoolean("urgent"), Instant.parse(rs.getString("created_at")), Instant.parse(rs.getString("updated_at")), closed == null ? null : Instant.parse(closed), List.of(), List.of());
     }
 
-    private static final String BASE_SQL = "SELECT t.*,c.name customer_name,c.phone_display,c.phone_normalized,creator.name created_by_name,assigned.name assigned_to_name FROM tickets t JOIN customers c ON c.id=t.customer_id JOIN employees creator ON creator.id=t.created_by JOIN employees assigned ON assigned.id=t.assigned_to";
+    private static final String BASE_SQL = "SELECT t.*,COALESCE((SELECT h.summary FROM ticket_history h WHERE h.ticket_id=t.id AND h.event_type='RESOLUTION' ORDER BY h.id DESC LIMIT 1),'') resolution_note,c.name customer_name,c.phone_display,c.phone_normalized,creator.name created_by_name,assigned.name assigned_to_name FROM tickets t JOIN customers c ON c.id=t.customer_id JOIN employees creator ON creator.id=t.created_by JOIN employees assigned ON assigned.id=t.assigned_to";
     private static final String TRANSFER_CATEGORY = "Dataoverføring / sikkerhetskopi / oppsett";
 }

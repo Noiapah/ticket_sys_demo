@@ -12,7 +12,7 @@ The application data directory and its existing contents receive an owner-only W
 
 ## Application PIN
 
-Version 1.0.4 adds a shared application PIN, chosen and confirmed in a native window on first launch. PINs contain 6–12 digits, including leading zeroes. The desktop launcher acquires its instance lock, then waits for PIN setup or successful verification before starting Spring, opening the database, or serving HTTP. PIN values never pass through the web page, API, command line or logs. Closing and restarting requires the PIN again; there is no additional idle lock in this version.
+Version 1.0.4 adds a shared application PIN, chosen and confirmed in a native window on first launch. PINs contain 4–12 digits, including leading zeroes. The desktop launcher acquires its instance lock, then waits for PIN setup or successful verification before starting Spring, opening the database, or serving HTTP. PIN values never pass through the web page, API, command line or logs. Closing and restarting requires the PIN again; there is no additional idle lock in this version.
 
 Five consecutive failed attempts advance the lockout schedule below. Failed attempts are counted across restarts and waiting periods. Submissions during an active lockout are rejected without changing the count; even the correct PIN is rejected until the wait ends. A successful unlock then resets both the failure count and escalation level.
 

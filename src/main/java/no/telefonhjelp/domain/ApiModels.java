@@ -17,7 +17,7 @@ public final class ApiModels {
     public record Ticket(
             long id, long version, String customerName, String customerPhone, String customerPhoneNormalized,
             DeviceType deviceType, String manufacturer, String deviceModel, String newDeviceModel, OperatingSystem operatingSystem,
-            String category, String description, long createdById, String createdByName,
+            String category, String description, String resolutionNote, long createdById, String createdByName,
             long assignedToId, String assignedToName, TicketStatus status, boolean urgent,
             Instant createdAt, Instant updatedAt, Instant closedAt, List<Comment> comments, List<HistoryEvent> history) {}
     public record TicketDraft(

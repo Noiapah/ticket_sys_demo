@@ -40,13 +40,16 @@ class ReportRedactionIntegrationTest {
     @Test
     void workbookOmitsCustomerAndNarrativeFields() throws Exception {
         var actor = employees.list().stream().findFirst().orElseGet(() -> employees.create("Markus"));
-        tickets.create(new TicketDraft("HEMMELIG NAVN", "99123456", DeviceType.PHONE, "Apple", "iPhone 15", "", OperatingSystem.IOS, "E-post", "HEMMELIG BESKRIVELSE", actor.id()));
+        var created = tickets.create(new TicketDraft("HEMMELIG NAVN", "99123456", DeviceType.PHONE, "Apple", "iPhone 15", "", OperatingSystem.IOS, "E-post", "HEMMELIG BESKRIVELSE", actor.id()));
         var filter = new ReportFilter(LocalDate.now().minusDays(1), LocalDate.now().plusDays(1), null, null);
+        var escalatedBefore = reports.summary(filter).escalated();
+        tickets.status(created.id(), TicketStatus.CLOSED, actor.id(), created.version(), "HEMMELIG AVSLUTNINGSNOTAT: Eskalert var ikke nødvendig.");
+        assertThat(reports.summary(filter).escalated()).isEqualTo(escalatedBefore);
         var bytes = reports.workbook(filter);
         try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
             var rendered = new StringBuilder();
             workbook.forEach(sheet -> sheet.forEach(row -> row.forEach(cell -> rendered.append(cell.toString()).append('\n'))));
-            assertThat(rendered.toString()).doesNotContain("HEMMELIG NAVN", "HEMMELIG BESKRIVELSE", "99123456");
+            assertThat(rendered.toString()).doesNotContain("HEMMELIG NAVN", "HEMMELIG BESKRIVELSE", "HEMMELIG AVSLUTNINGSNOTAT", "99123456");
             assertThat(workbook.getSheet("Saker").getRow(0).getPhysicalNumberOfCells()).isEqualTo(13);
             assertThat(workbook.getSheet("Sammendrag").getDrawingPatriarch().getCharts()).hasSize(2);
             assertThat(workbook.getSheet("Kategorier").getDrawingPatriarch().getCharts()).hasSize(1);

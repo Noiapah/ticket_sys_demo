@@ -65,7 +65,8 @@ class PinAccessTest {
     @Test void rejectsInvalidSetupAndDoesNotStorePlainPinOrAllowSetupAgain() throws Exception {
         var access = access();
         assertThat(access.status().mode()).isEqualTo(PinAccess.Mode.SETUP);
-        assertThatThrownBy(() -> access.setup("12345".toCharArray(), "12345".toCharArray())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> access.setup("123".toCharArray(), "123".toCharArray())).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> access.setup("1234567890123".toCharArray(), "1234567890123".toCharArray())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> access.setup("12345x".toCharArray(), "12345x".toCharArray())).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> access.setup(correct(), wrong())).isInstanceOf(IllegalArgumentException.class);
         access.setup(correct(), correct());

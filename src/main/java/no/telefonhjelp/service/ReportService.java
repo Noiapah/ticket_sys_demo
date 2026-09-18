@@ -78,7 +78,7 @@ public class ReportService {
         var ticketArgs = new ArrayList<Object>();
         ticketArgs.add(range.from()); ticketArgs.add(range.to());
         var ticketWhere = filters(filter, range, ticketArgs, "eh");
-        var tickets = jdbc.query("SELECT t.status,(t.urgent=1 OR EXISTS(SELECT 1 FROM ticket_history hu WHERE hu.ticket_id=t.id AND hu.event_type='URGENT' AND hu.summary='Markert som haster')) urgent,t.created_at,EXISTS(SELECT 1 FROM ticket_history h WHERE h.ticket_id=t.id AND h.summary LIKE '%Eskalert%') escalated FROM tickets t WHERE t.created_at>=? AND t.created_at<?" + ticketWhere,
+        var tickets = jdbc.query("SELECT t.status,(t.urgent=1 OR EXISTS(SELECT 1 FROM ticket_history hu WHERE hu.ticket_id=t.id AND hu.event_type='URGENT' AND hu.summary='Markert som haster')) urgent,t.created_at,EXISTS(SELECT 1 FROM ticket_history h WHERE h.ticket_id=t.id AND h.event_type<>'RESOLUTION' AND h.summary LIKE '%Eskalert%') escalated FROM tickets t WHERE t.created_at>=? AND t.created_at<?" + ticketWhere,
                 (rs, n) -> new ReportRow(rs.getString("status"), rs.getBoolean("urgent"), Instant.parse(rs.getString("created_at")), rs.getBoolean("escalated")), ticketArgs.toArray());
 
         var closedArgs = new ArrayList<Object>();

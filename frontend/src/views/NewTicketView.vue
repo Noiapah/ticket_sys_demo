@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import DeviceAutocomplete from '../components/DeviceAutocomplete.vue'
+import CustomerHistory from '../components/CustomerHistory.vue'
 import { categories, TRANSFER_CATEGORY } from '../data/categories'
 import { deviceTypeLabels, type CustomerMatch, type DeviceType, type OperatingSystem, type TicketDraft } from '../domain/types'
 import { normalizePhone } from '../domain/format'
@@ -15,21 +16,28 @@ const submitting = ref(false)
 const error = ref('')
 const customerMatch = ref<CustomerMatch | null>(null)
 let customerTimer: number
+let customerLookup = 0
 const draft = reactive<TicketDraft>({ customerName: '', customerPhone: '', deviceType: 'PHONE', manufacturer: '', deviceModel: '', newDeviceModel: '', operatingSystem: 'OTHER', category: '', description: '' })
 const phoneWarning = computed(() => draft.customerPhone && !normalizePhone(draft.customerPhone).valid ? 'Nummeret lagres, men kunne ikke gjenkjennes som et gyldig telefonnummer.' : '')
 const isTransferCategory = computed(() => draft.category === TRANSFER_CATEGORY)
 const deviceTypes: DeviceType[] = ['PHONE', 'TABLET', 'SMARTWATCH', 'COMPUTER', 'OTHER']
 
 watch(() => draft.customerPhone, () => {
+  const generation = ++customerLookup
+  const phone = draft.customerPhone
   window.clearTimeout(customerTimer); customerMatch.value = null
   if (draft.customerPhone.replace(/\D/g, '').length < 7) return
   customerTimer = window.setTimeout(async () => {
-    try { customerMatch.value = await gateway.matchCustomer(draft.customerPhone); if (customerMatch.value && !draft.customerName.trim()) draft.customerName = customerMatch.value.name }
-    catch { customerMatch.value = null }
+    try {
+      const match = await gateway.matchCustomer(phone)
+      if (generation !== customerLookup) return
+      customerMatch.value = match
+      if (match && !draft.customerName.trim()) draft.customerName = match.name
+    } catch { if (generation === customerLookup) customerMatch.value = null }
   }, 250)
 })
 watch(() => draft.category, category => { if (category !== TRANSFER_CATEGORY) draft.newDeviceModel = '' })
-onBeforeUnmount(() => window.clearTimeout(customerTimer))
+onBeforeUnmount(() => { customerLookup++; window.clearTimeout(customerTimer) })
 
 function selectType(type: DeviceType) {
   draft.deviceType = type; draft.deviceModel = ''; draft.manufacturer = ''; draft.operatingSystem = 'OTHER'; otherModel.value = type !== 'PHONE'
@@ -54,7 +62,7 @@ async function submit() {
       <fieldset><legend>1. Kategori</legend><label>Hva gjelder saken?<select v-model="draft.category" required autofocus><option value="" disabled>Velg kategori</option><option v-for="category in categories" :key="category">{{ category }}</option></select></label></fieldset>
       <fieldset><legend>2. Enhetstype</legend><div class="choice-grid"><button v-for="type in deviceTypes" :key="type" type="button" :class="['choice', { active: draft.deviceType === type }]" @click="selectType(type)">{{ deviceTypeLabels[type] }}</button></div></fieldset>
       <fieldset><legend>3. Enhet</legend><DeviceAutocomplete v-model="draft.deviceModel" v-model:other="otherModel" :type="draft.deviceType" @select="selectDevice" /><label v-if="isTransferCategory" class="secondary-device-field">Enhetsmodell (ny enhet)<input v-model="draft.newDeviceModel" placeholder="F.eks. iPhone 16 Pro" autocomplete="off" /></label></fieldset>
-      <fieldset><legend>4. Kunde</legend><div class="two-columns"><label>Telefonnummer<input v-model="draft.customerPhone" inputmode="tel" autocomplete="tel" placeholder="991 23 456" required /><small v-if="phoneWarning" class="warning-text">{{ phoneWarning }}</small></label><label>Navn<input v-model="draft.customerName" autocomplete="name" placeholder="Kundens navn" required /></label></div><div v-if="customerMatch" class="alert alert--info">Kjent kunde: {{ customerMatch.name }} · {{ customerMatch.previousTickets }} tidligere {{ customerMatch.previousTickets === 1 ? 'sak' : 'saker' }}</div></fieldset>
+      <fieldset><legend>4. Kunde</legend><div class="two-columns"><label>Telefonnummer<input v-model="draft.customerPhone" inputmode="tel" autocomplete="tel" placeholder="991 23 456" required /><small v-if="phoneWarning" class="warning-text">{{ phoneWarning }}</small></label><label>Navn<input v-model="draft.customerName" autocomplete="name" placeholder="Kundens navn" required /></label></div><div v-if="customerMatch" class="alert alert--info">Kjent kunde: {{ customerMatch.name }}<CustomerHistory :phone="customerMatch.phoneNormalized" :label="`${customerMatch.previousTickets} tidligere ${customerMatch.previousTickets === 1 ? 'sak' : 'saker'} – vis historikk`" /></div></fieldset>
       <fieldset><legend>5. Problem</legend><label>Kort beskrivelse<textarea v-model="draft.description" rows="3" placeholder="F.eks. kommer ikke inn på Apple-konto" maxlength="500" required></textarea><small>{{ draft.description.length }}/500</small></label></fieldset>
       <div v-if="error" class="alert alert--error">{{ error }}</div>
       <div class="form-actions"><RouterLink class="button button--ghost" to="/">Avbryt</RouterLink><button class="button button--primary button--large" :disabled="submitting">{{ submitting ? 'Oppretter…' : 'Opprett sak' }}</button></div>

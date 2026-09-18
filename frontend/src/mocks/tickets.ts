@@ -63,6 +63,7 @@ export const seedTickets: Ticket[] = Array.from({ length: 140 }, (_, offset) => 
     newDeviceModel: category === TRANSFER_CATEGORY ? 'iPhone 17' : '',
     category,
     description: descriptions[offset % descriptions.length],
+    resolutionNote: '',
     createdById: creator.id,
     createdByName: creator.name,
     assignedToId: assignee.id,

@@ -20,11 +20,11 @@ public class TicketController {
     @PatchMapping("/{id}") Ticket update(@PathVariable long id, @RequestBody TicketPatch patch) { return service.update(id, patch); }
     @PostMapping("/{id}/comments") Ticket comment(@PathVariable long id, @RequestBody CommentRequest body) { return service.comment(id, body.text(), body.actorId(), body.version()); }
     @PostMapping("/{id}/assignment") Ticket assign(@PathVariable long id, @RequestBody AssignmentRequest body) { return service.assign(id, body.employeeId(), body.actorId(), body.version()); }
-    @PostMapping("/{id}/status") Ticket status(@PathVariable long id, @RequestBody StatusRequest body) { return service.status(id, body.status(), body.actorId(), body.version()); }
+    @PostMapping("/{id}/status") Ticket status(@PathVariable long id, @RequestBody StatusRequest body) { return service.status(id, body.status(), body.actorId(), body.version(), body.resolutionNote()); }
     @PostMapping("/{id}/urgent") Ticket urgent(@PathVariable long id, @RequestBody UrgentRequest body) { return service.urgent(id, body.urgent(), body.actorId(), body.version()); }
 
     record CommentRequest(String text, long actorId, long version) {}
     record AssignmentRequest(long employeeId, long actorId, long version) {}
-    record StatusRequest(TicketStatus status, long actorId, long version) {}
+    record StatusRequest(TicketStatus status, long actorId, long version, String resolutionNote) {}
     record UrgentRequest(boolean urgent, long actorId, long version) {}
 }
