@@ -2,6 +2,8 @@
 
 Et lokalt, norskspråklig supportsystem for en telefonbutikk. Programmet er bygget med Vue/TypeScript og en Java/Spring/SQLite-desktopvert.
 
+Se [databaseskjemaet](docs/database-schema.md) for tabeller, kolonner, relasjoner og indekser.
+
 ## Utvikling
 
 Forutsetninger: Node.js 24 og JDK 25 på `PATH`, med `JAVA_HOME` satt til JDK-mappen. Maven Wrapper henter Maven; en separat Maven-installasjon er ikke nødvendig. Produksjonsinstallasjonen inkluderer Java og krever ingen utviklingsverktøy eller nettforbindelse.
